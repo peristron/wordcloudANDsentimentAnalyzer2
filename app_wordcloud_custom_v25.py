@@ -685,24 +685,44 @@ if combined_counts:
 else: st.info("upload files to start.")
 
 # --- AI ANALYSIS SECTION ---
-st.divider()
-st.subheader("🤖 AI Insights")
-if combined_counts:
-    if st.session_state['authenticated']:
-        if st.button("✨ Analyze Themes with AI", type="primary"):
-            if not st.session_state.get('ai_response'):
-                with st.spinner("AI is analyzing frequency patterns..."):
-                    config = locals().get('ai_config') # Grab config from sidebar scope
-                    if config and config.get('api_key'):
-                        response = generate_ai_insights(combined_counts, combined_bigrams, config)
-                        st.session_state['ai_response'] = response
-                    else:
-                        st.error("API Key missing in sidebar.")
-        
-        if st.session_state.get('ai_response'):
-            st.markdown(st.session_state['ai_response'])
-    else:
-        st.info("🔒 Log in via sidebar to unlock AI thematic analysis of your data.")
+with st.expander("📖 App Guide & Usage Examples", expanded=False):
+    st.markdown("""
+    ### 🚀 Quick Start
+    1.  **Upload Data:** Drag and drop CSV, Excel, or VTT files in the sidebar.
+    2.  **Configure Input:** If using Excel/CSV, open the **"🧩 Input Options"** expander for that file to select which column contains the text (e.g., "Comments", "Transcript").
+    3.  **Visualize:** The Word Cloud updates automatically.
+    4.  **Analyze:** Log in via the sidebar to unlock the **"✨ Analyze Themes"** button for AI-powered insights.
+
+    ---
+
+    ### 💡 Common Use Cases
+
+    #### 1. Analyzing Survey Responses (Excel/CSV)
+    *   **Goal:** Understand sentiment in customer feedback.
+    *   **Steps:**
+        *   Upload your survey `.xlsx` file.
+        *   In **Input Options**, select the specific column containing text (e.g., `Q3_Feedback`).
+        *   Enable **Sentiment Analysis** in the sidebar.
+        *   **Result:** Positive words appear Green, negative words appear Red.
+
+    #### 2. Summarizing Meeting Transcripts (VTT)
+    *   **Goal:** Find key topics from a Zoom or Teams meeting.
+    *   **Steps:**
+        *   Upload the `.vtt` transcript file.
+        *   Ensure **"Remove chat artifacts"** is checked in the Cleaning section (this removes timestamps and speaker names).
+        *   **Result:** A clean cloud of the meeting's actual content.
+
+    ---
+
+    ### 🧠 Understanding the AI Analysis
+    The "AI Insights" section does not read your original files line-by-line (preserving privacy). Instead, it sends the **Frequency Table** (Top 100 words + Top Bigrams) to the AI.
+    *   **The AI's Job:** It looks at the cluster of words (e.g., "server, slow, crash, timeout") and deduces the narrative ("Likely a technical outage incident").
+    *   **Privacy:** Since full sentences aren't sent, PII is naturally obfuscated, though you should still scrub sensitive names before uploading.
+
+    ### ⚙️ Advanced Tips
+    *   **Stopwords:** If names like "John" or "Jane" clutter your cloud, add them to the **Stopwords** text area in the sidebar.
+    *   **Bigrams:** Enable "Compute Bigrams" to catch phrases like "Machine Learning" or "Customer Service" instead of just single words.
+    """)
 
 # --- TABLES ---
 if combined_counts:
