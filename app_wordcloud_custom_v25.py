@@ -1,7 +1,7 @@
 #     app_wordcloud_custom_v25.py
 #  OPTIMIZED FOR DEPLOYMENT + AI ANALYSIS
-#
-# v25 update: Integrated AI (xAI/OpenAI) to analyze word frequency lists for themes.
+#     app_wordcloud_custom_v26.py
+#  OPTIMIZED FOR DEPLOYMENT + AI ANALYSIS (Fixed UI + Updated Models)
 #
 import io
 import re
@@ -20,8 +20,6 @@ from io import BytesIO
 from wordcloud import WordCloud, STOPWORDS
 from matplotlib import font_manager
 from itertools import pairwise
-
-# AI Imports
 import openai
 
 # optional excel engine
@@ -35,10 +33,8 @@ try:
     import nltk
     from nltk.sentiment.vader import SentimentIntensityAnalyzer
 except ImportError:
-    # st.error("NLTK not found. Please run: `pip install nltk`") # Suppressed for cleaner startup
     nltk = None
     SentimentIntensityAnalyzer = None
-
 
 # precompiled patterns
 HTML_TAG_RE = re.compile(r"<[^>]+>")
@@ -74,13 +70,6 @@ def perform_login():
 def logout():
     st.session_state['authenticated'] = False
     st.session_state['ai_response'] = ""
-
-def estimate_cost(input_str, output_str, price_in_per_m, price_out_per_m):
-    in_tokens = len(input_str) / 4
-    out_tokens = len(output_str) / 4
-    cost = (in_tokens / 1_000_000 * price_in_per_m) + (out_tokens / 1_000_000 * price_out_per_m)
-    st.session_state['total_tokens'] += int(in_tokens + out_tokens)
-    st.session_state['total_cost'] += cost
 
 # ---------------------------
 # utilities & setup
@@ -440,7 +429,7 @@ def generate_ai_insights(counts: Counter, bigrams: Counter, config: dict):
 # streamlit app
 # ---------------------------
 
-st.set_page_config(page_title="Word Cloud AI [v25]", layout="wide")
+st.set_page_config(page_title="Word Cloud AI [v26]", layout="wide")
 st.title("🧠 Multi-File Word Cloud & AI Analyzer")
 
 st.warning("""
@@ -457,20 +446,38 @@ with st.sidebar:
         st.success("AI Features Unlocked")
         
         with st.expander("🤖 Provider Settings", expanded=True):
-            ai_provider = st.radio("Provider", ["OpenAI (GPT-4o)", "xAI (Grok)"])
+            ai_provider = st.radio("Provider", ["xAI (Grok)", "OpenAI (GPT-4o)"])
             
             if "OpenAI" in ai_provider:
                 api_key_name = "openai_api_key"
                 base_url = None 
-                model_name = "gpt-4o"
-                price_in, price_out = 2.50, 10.00
+                # Allow user to pick model
+                model_name = st.selectbox("Model", ["gpt-4o", "gpt-4o-mini"])
+                # Approximate pricing logic
+                if "mini" in model_name:
+                    price_in, price_out = 0.15, 0.60
+                else:
+                    price_in, price_out = 2.50, 10.00
             else:
                 api_key_name = "xai_api_key"
                 base_url = "https://api.x.ai/v1"
-                model_name = "grok-2-1212" 
-                price_in, price_out = 2.00, 10.00
+                # Updated Model List based on recent findings
+                model_options = {
+                    "Grok 4.1 Fast (Reasoning) [Best Value]": "grok-4-1-fast-reasoning",
+                    "Grok 4": "grok-4-0709",
+                    "Grok 2 (Legacy)": "grok-2-1212"
+                }
+                choice = st.selectbox("Model", list(model_options.keys()))
+                model_name = model_options[choice]
+                
+                # Pricing logic for xAI
+                if "fast" in model_name:
+                    price_in, price_out = 0.20, 0.50
+                elif "grok-4" in model_name:
+                    price_in, price_out = 3.00, 15.00
+                else:
+                    price_in, price_out = 2.00, 10.00
 
-            model_name = st.text_input("Model Name", value=model_name)
             api_key = st.secrets.get(api_key_name)
             if not api_key: api_key = st.text_input(f"Enter {api_key_name}", type="password")
             
@@ -684,48 +691,33 @@ if combined_counts:
     except MemoryError: st.error("memory error: reduce image size.")
 else: st.info("upload files to start.")
 
-# --- AI ANALYSIS SECTION ---
-with st.expander("📖 App Guide & Usage Examples", expanded=False):
-    st.markdown("""
-    ### 🚀 Quick Start
-    1.  **Upload Data:** Drag and drop CSV, Excel, or VTT files in the sidebar.
-    2.  **Configure Input:** If using Excel/CSV, open the **"🧩 Input Options"** expander for that file to select which column contains the text (e.g., "Comments", "Transcript").
-    3.  **Visualize:** The Word Cloud updates automatically.
-    4.  **Analyze:** Log in via the sidebar to unlock the **"✨ Analyze Themes"** button for AI-powered insights.
+# --- AI ANALYSIS SECTION (FIXED: Added UI to Trigger Analysis) ---
+if combined_counts and st.session_state['authenticated']:
+    st.divider()
+    st.subheader("🤖 AI Theme Detection")
+    st.caption("Send the top 100 terms to the AI to detect likely topics and anomalies.")
+    if st.button("✨ Analyze Themes with AI", type="primary"):
+        with st.status("Analyzing top terms...", expanded=True) as status:
+            response = generate_ai_insights(combined_counts, combined_bigrams if compute_bigrams else None, ai_config)
+            st.session_state['ai_response'] = response
+            status.update(label="Analysis Complete", state="complete", expanded=False)
 
-    ---
-
-    ### 💡 Common Use Cases
-
-    #### 1. Analyzing Survey Responses (Excel/CSV)
-    *   **Goal:** Understand sentiment in customer feedback.
-    *   **Steps:**
-        *   Upload your survey `.xlsx` file.
-        *   In **Input Options**, select the specific column containing text (e.g., `Q3_Feedback`).
-        *   Enable **Sentiment Analysis** in the sidebar.
-        *   **Result:** Positive words appear Green, negative words appear Red.
-
-    #### 2. Summarizing Meeting Transcripts (VTT)
-    *   **Goal:** Find key topics from a Zoom or Teams meeting.
-    *   **Steps:**
-        *   Upload the `.vtt` transcript file.
-        *   Ensure **"Remove chat artifacts"** is checked in the Cleaning section (this removes timestamps and speaker names).
-        *   **Result:** A clean cloud of the meeting's actual content.
-
-    ---
-
-    ### 🧠 Understanding the AI Analysis
-    The "AI Insights" section does not read your original files line-by-line (preserving privacy). Instead, it sends the **Frequency Table** (Top 100 words + Top Bigrams) to the AI.
-    *   **The AI's Job:** It looks at the cluster of words (e.g., "server, slow, crash, timeout") and deduces the narrative ("Likely a technical outage incident").
-    *   **Privacy:** Since full sentences aren't sent, PII is naturally obfuscated, though you should still scrub sensitive names before uploading.
-
-    ### ⚙️ Advanced Tips
-    *   **Stopwords:** If names like "John" or "Jane" clutter your cloud, add them to the **Stopwords** text area in the sidebar.
-    *   **Bigrams:** Enable "Compute Bigrams" to catch phrases like "Machine Learning" or "Customer Service" instead of just single words.
-    """)
+if st.session_state['ai_response']:
+    st.markdown("### 📋 AI Insights")
+    st.markdown(st.session_state['ai_response'])
+    st.divider()
 
 # --- TABLES ---
 if combined_counts:
+    with st.expander("📖 App Guide & Usage Examples", expanded=False):
+        st.markdown("""
+        ### 🚀 Quick Start
+        1.  **Upload Data:** Drag and drop CSV, Excel, or VTT files in the sidebar.
+        2.  **Configure Input:** If using Excel/CSV, open the **"🧩 Input Options"** expander for that file to select which column contains the text (e.g., "Comments", "Transcript").
+        3.  **Visualize:** The Word Cloud updates automatically.
+        4.  **Analyze:** Log in via the sidebar to unlock the **"✨ Analyze Themes"** button for AI-powered insights.
+        """)
+
     st.divider()
     st.subheader(f"📊 Frequency Tables (Top {top_n})")
     most_common = combined_counts.most_common(top_n)
@@ -739,9 +731,3 @@ if combined_counts:
         bg_data = [[" ".join(bg), f] + ([term_sentiments.get(" ".join(bg),0), get_sentiment_category(term_sentiments.get(" ".join(bg),0), pos_threshold, neg_threshold)] if enable_sentiment else []) for bg, f in top_bg]
         bg_cols = ["bigram", "count"] + (["sentiment", "category"] if enable_sentiment else [])
         st.dataframe(pd.DataFrame(bg_data, columns=bg_cols), use_container_width=True)
-
-# ---------------------------
-# help
-# ---------------------------
-with st.expander("ℹ️ App Guide", expanded=False):
-    st.markdown("Use the sidebar to upload files and configure settings. Authenticate to use AI features.")
