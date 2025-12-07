@@ -498,7 +498,7 @@ with st.sidebar:
             if st.session_state['auth_error']: st.error("Incorrect password.")
 
     st.divider()
-    st.info("Performance Tip: Streaming allows files up to ~400MB.")
+    st.info("Performance Tip: Streaming allows files up to ~1GB (but no need to push it)")
     uploaded_files = st.file_uploader(
         "upload files (csv, xlsx, vtt)",
         type=["csv", "xlsx", "xlsm", "vtt"],
