@@ -1,7 +1,9 @@
-streamlit
-pandas
-matplotlib
-wordcloud
-nltk
-openpyxl
-openai
+streamlit>=1.30.0
+pandas>=2.0.0
+matplotlib>=3.5.0
+wordcloud>=1.9.0
+openai>=1.0.0
+networkx>=3.0.0
+streamlit-agraph>=0.0.45
+openpyxl>=3.1.0
+nltk>=3.8.0
