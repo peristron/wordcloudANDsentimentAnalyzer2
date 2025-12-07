@@ -1,7 +1,4 @@
-#     app_wordcloud_custom_v25.py
-#  OPTIMIZED FOR DEPLOYMENT + AI ANALYSIS
-#     app_wordcloud_custom_v26.py
-#  OPTIMIZED FOR DEPLOYMENT + AI ANALYSIS (Fixed UI + Updated Models)
+#  OPTIMIZED FOR DEPLOYMENT + AI ANALYSIS + KNOWLEDGE GRAPH
 #
 import io
 import re
@@ -21,6 +18,10 @@ from wordcloud import WordCloud, STOPWORDS
 from matplotlib import font_manager
 from itertools import pairwise
 import openai
+
+# --- NEW IMPORTS FOR GRAPH ---
+import networkx as nx
+from streamlit_agraph import agraph, Node, Edge, Config
 
 # optional excel engine
 try:
@@ -343,6 +344,24 @@ def process_rows_iter(
     return {"counts": counts, "bigrams": bigram_counts or Counter(), "rows": total_rows, "elapsed": elapsed}
 
 # ---------------------------
+# STATS & ANALYTICS HELPERS
+# ---------------------------
+
+def calculate_text_stats(counts: Counter, total_rows: int) -> Dict:
+    total_tokens = sum(counts.values())
+    unique_tokens = len(counts)
+    # Estimate average word length weighted by frequency
+    avg_len = sum(len(word) * count for word, count in counts.items()) / total_tokens if total_tokens else 0
+    
+    return {
+        "Total Rows": total_rows,
+        "Total Tokens": total_tokens,
+        "Unique Vocabulary": unique_tokens,
+        "Avg Word Length": round(avg_len, 2),
+        "Lexical Diversity": round(unique_tokens / total_tokens, 4) if total_tokens else 0
+    }
+
+# ---------------------------
 # sentiment analysis logic
 # ---------------------------
 
@@ -429,8 +448,8 @@ def generate_ai_insights(counts: Counter, bigrams: Counter, config: dict):
 # streamlit app
 # ---------------------------
 
-st.set_page_config(page_title="Word Cloud AI [v26]", layout="wide")
-st.title("🧠 Multi-File Word Cloud & AI Analyzer")
+st.set_page_config(page_title="Word Cloud & Network AI", layout="wide")
+st.title("🧠 Multi-File Word Cloud & Graph Analyzer")
 
 st.warning("""
 **⚠️ Data Privacy & Security Notice**
@@ -451,9 +470,7 @@ with st.sidebar:
             if "OpenAI" in ai_provider:
                 api_key_name = "openai_api_key"
                 base_url = None 
-                # Allow user to pick model
                 model_name = st.selectbox("Model", ["gpt-4o", "gpt-4o-mini"])
-                # Approximate pricing logic
                 if "mini" in model_name:
                     price_in, price_out = 0.15, 0.60
                 else:
@@ -461,7 +478,6 @@ with st.sidebar:
             else:
                 api_key_name = "xai_api_key"
                 base_url = "https://api.x.ai/v1"
-                # Updated Model List based on recent findings
                 model_options = {
                     "Grok 4.1 Fast (Reasoning) [Best Value]": "grok-4-1-fast-reasoning",
                     "Grok 4": "grok-4-0709",
@@ -470,7 +486,6 @@ with st.sidebar:
                 choice = st.selectbox("Model", list(model_options.keys()))
                 model_name = model_options[choice]
                 
-                # Pricing logic for xAI
                 if "fast" in model_name:
                     price_in, price_out = 0.20, 0.50
                 elif "grok-4" in model_name:
@@ -558,10 +573,10 @@ with st.sidebar:
     combined_font_name = st.selectbox("font for combined cloud", font_names or ["(default)"], max(default_font_index, 0))
     combined_font_path = font_map.get(combined_font_name) if font_names else None
     
-    with st.expander("⚙️ performance options", expanded=False):
+    with st.expander("⚙️ performance options", expanded=True):
         encoding_choice = st.selectbox("file encoding", ["auto (utf-8)", "latin-1"])
         chunksize = st.number_input("csv chunk size", 1_000, 100_000, 10_000, 1_000)
-        compute_bigrams = st.checkbox("compute bigrams", value=False)
+        compute_bigrams = st.checkbox("compute bigrams / graph", value=True, help="Required for Network Graph features")
 
 # ---------------------------
 # main processing loop
@@ -649,6 +664,9 @@ if uploaded_files:
             keep_hyphens, keep_apostrophes, tuple(user_phrase_stopwords), tuple(user_single_stopwords),
             add_preps, drop_integers, min_word_len, compute_bigrams, make_progress_cb(approx_rows), update_every
         )
+        
+        # Save minimal data for stats later
+        file_results.append({"rows": data["rows"]})
 
         per_file_bar.progress(100)
         per_file_status.markdown(f"✅ done in {format_duration(time.perf_counter() - start_wall)} • rows: {data['rows']:,}")
@@ -689,9 +707,109 @@ if combined_counts:
         st.download_button("📥 download combined png", fig_to_png_bytes(fig), "combined_wc.png", "image/png")
         plt.close(fig); gc.collect()
     except MemoryError: st.error("memory error: reduce image size.")
+    
+    # --- TEXT STATISTICS DASHBOARD (NEW) ---
+    st.divider()
+    st.subheader("📈 Text Statistics")
+    total_processed_rows = sum(f['rows'] for f in file_results)
+    stats = calculate_text_stats(combined_counts, total_processed_rows)
+    
+    col_stat1, col_stat2, col_stat3, col_stat4 = st.columns(4)
+    col_stat1.metric("Total Tokens", f"{stats['Total Tokens']:,}", help="Total number of valid words processed after cleaning.")
+    col_stat2.metric("Unique Vocabulary", f"{stats['Unique Vocabulary']:,}", help="Number of distinct words found.")
+    col_stat3.metric("Lexical Diversity", f"{stats['Lexical Diversity']}", help="Unique Words / Total Tokens. Higher number means richer vocabulary.")
+    col_stat4.metric("Avg Word Length", f"{stats['Avg Word Length']}", help="Average number of characters per word.")
+
 else: st.info("upload files to start.")
 
-# --- AI ANALYSIS SECTION (FIXED: Added UI to Trigger Analysis) ---
+
+# --- KNOWLEDGE GRAPH / NETWORK VISUALIZATION (NEW) ---
+if compute_bigrams and combined_bigrams and st.checkbox("🕸️ Show Network Graph (Beta)", value=False):
+    st.divider()
+    st.subheader("🔗 Co-occurrence Network")
+    st.caption("This graph visualizes how words connect. A connection is drawn if words appear immediately next to each other (Bigrams).")
+
+    # Graph Config Layout
+    col_g_conf, col_g_viz = st.columns([1, 3])
+    
+    with col_g_conf:
+        st.markdown("#### Graph Settings")
+        min_edge_weight = st.slider("Min Frequency", 2, 50, 5, help="Only show connections that appear at least this many times.")
+        max_nodes_graph = st.slider("Max Nodes", 10, 200, 50, help="Limit graph complexity by showing only top connected words.")
+        physics_enabled = st.checkbox("Enable Physics", True, help="Allows you to drag nodes around.")
+        directed_graph = st.checkbox("Directed Arrows", True, help="Show direction of flow (word A -> word B).")
+
+    with col_g_viz:
+        # Build Graph
+        G = nx.DiGraph() if directed_graph else nx.Graph()
+        
+        # Filter Bigrams
+        filtered_bigrams = {k: v for k, v in combined_bigrams.items() if v >= min_edge_weight}
+        sorted_connections = sorted(filtered_bigrams.items(), key=lambda x: x[1], reverse=True)[:max_nodes_graph]
+        
+        if not sorted_connections:
+            st.warning("No connections found with these settings. Try lowering 'Min Frequency'.")
+        else:
+            for (source, target), weight in sorted_connections:
+                G.add_edge(source, target, weight=weight)
+            
+            # Calculate Centrality
+            # Degree Centrality = How many connections a node has (normalized)
+            centrality = nx.degree_centrality(G)
+            
+            # Create Agraph Nodes/Edges
+            nodes, edges = [], []
+            
+            for node_id in G.nodes():
+                # Size node based on centrality
+                base_size = 15
+                size = base_size + (centrality.get(node_id, 0) * 50)
+                
+                # Color based on sentiment if enabled
+                node_color = neu_color
+                if enable_sentiment:
+                    score = term_sentiments.get(node_id, 0)
+                    if score >= pos_threshold: node_color = pos_color
+                    elif score <= neg_threshold: node_color = neg_color
+
+                nodes.append(Node(
+                    id=node_id,
+                    label=node_id,
+                    size=size,
+                    color=node_color,
+                    title=f"Freq: {combined_counts.get(node_id, 0)} | Centrality: {centrality.get(node_id,0):.3f}"
+                ))
+
+            for (source, target), weight in sorted_connections:
+                edges.append(Edge(
+                    source=source,
+                    target=target,
+                    # label=str(weight), # Uncomment to see numbers on lines
+                    width=max(1, weight * 0.1),
+                    color="#cccccc"
+                ))
+
+            config = Config(
+                width=800, 
+                height=600, 
+                directed=directed_graph,
+                physics=physics_enabled, 
+                hierarchy=False,
+                nodeHighlightBehavior=True, 
+                highlightColor="#F7A7A6",
+                collapsible=False
+            )
+
+            agraph(nodes=nodes, edges=edges, config=config)
+            
+            # Centrality Table
+            with st.expander("📊 Graph Analytics (Centrality Details)"):
+                st.info("**Centrality** measures how 'important' a word is in the network. Words with high centrality act as bridges or hubs connecting different topics.")
+                c_data = [{"Word": k, "Centrality": v} for k, v in centrality.items()]
+                st.dataframe(pd.DataFrame(c_data).sort_values("Centrality", ascending=False).head(20), use_container_width=True)
+
+
+# --- AI ANALYSIS SECTION ---
 if combined_counts and st.session_state['authenticated']:
     st.divider()
     st.subheader("🤖 AI Theme Detection")
@@ -715,7 +833,8 @@ if combined_counts:
         1.  **Upload Data:** Drag and drop CSV, Excel, or VTT files in the sidebar.
         2.  **Configure Input:** If using Excel/CSV, open the **"🧩 Input Options"** expander for that file to select which column contains the text (e.g., "Comments", "Transcript").
         3.  **Visualize:** The Word Cloud updates automatically.
-        4.  **Analyze:** Log in via the sidebar to unlock the **"✨ Analyze Themes"** button for AI-powered insights.
+        4.  **Network Graph:** Check "Show Network Graph" to see how words link together.
+        5.  **Analyze:** Log in via the sidebar to unlock the **"✨ Analyze Themes"** button for AI-powered insights.
         """)
 
     st.divider()
