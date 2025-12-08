@@ -856,16 +856,33 @@ if combined_counts:
 
             # --- COMMUNITY DETECTION ---
             community_map = {}
+            # NEW: Variable to store text for the AI
+            ai_cluster_info = "" 
+            
             if color_mode == "Community (Topic)":
                 G_undir = G.to_undirected() if directed_graph else G
                 try:
                     communities = nx_comm.greedy_modularity_communities(G_undir)
+                    
+                    # --- NEW: Build the string for the AI ---
+                    cluster_descriptions = []
                     for group_id, community in enumerate(communities):
+                        # Get top 5 most frequent words in this specific cluster
+                        # We use combined_counts to sort by frequency
+                        top_in_cluster = sorted(list(community), key=lambda x: combined_counts[x], reverse=True)[:5]
+                        cluster_descriptions.append(f"- Cluster {group_id+1}: {', '.join(top_in_cluster)}")
+                        
+                        # Existing mapping logic
                         for node in community:
                             community_map[node] = group_id
+                    
+                    ai_cluster_info = "\n".join(cluster_descriptions)
+                    # ----------------------------------------
+
                 except Exception as e:
                     st.warning(f"Could not calculate communities: {e}")
 
+            # Keep this line! It is required for the node coloring step later.
             community_colors = ["#FF4B4B", "#4589ff", "#ffa421", "#3cdb82", "#8b46ff", "#ff4b9f", "#00c0f2"]
 
             # 4. CREATE NODES
