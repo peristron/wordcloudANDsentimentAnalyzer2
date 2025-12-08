@@ -1016,9 +1016,16 @@ if combined_counts and st.session_state['authenticated']:
     st.divider()
     st.subheader("🤖 AI Theme Detection")
     st.caption("Send the top 100 terms to the AI to detect likely topics and anomalies.")
+# ... inside the button click ...
     if st.button("✨ Analyze Themes with AI", type="primary"):
         with st.status("Analyzing top terms...", expanded=True) as status:
-            response = generate_ai_insights(combined_counts, combined_bigrams if compute_bigrams else None, ai_config)
+            # CHECK IF ai_cluster_info EXISTS (It only exists if graph was drawn)
+            # If not, pass an empty string
+            g_context = locals().get('ai_cluster_info', "(Graph clustering not run)")
+            
+            # PASS THE NEW ARGUMENT
+            response = generate_ai_insights(combined_counts, combined_bigrams if compute_bigrams else None, ai_config, g_context)
+            
             st.session_state['ai_response'] = response
             status.update(label="Analysis Complete", state="complete", expanded=False)
 
