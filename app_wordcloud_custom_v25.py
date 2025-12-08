@@ -493,7 +493,20 @@ def generate_ai_insights(counts: Counter, bigrams: Counter, config: dict, graph_
 # ------------------------------
 
 st.set_page_config(page_title="Word Cloud & Graph Analytics (& Sentiment Analyzer)", layout="wide")
-st.title("🧠 Multi-File Word Cloud & Graph Analyzer")
+st.title("🧠 Multi-File Word Cloud & Graph Analyzer (& Sentiment Analyzer)")
+
+
+with st.expander("📘 Using this App for Data Insights", expanded=False):
+    st.markdown("""
+    **The Unstructured Data Intelligence Engine**  
+    This app combines **Network Graph Theory** with **Generative AI** to reveal context and relationships hidden in text.
+
+    1. **Relational Context (The "Why"):** Instead of just counting words, this app maps relationships. It differentiates between concepts like "Good Battery" and "Bad Battery" based on distinct structural pathways rather than just frequency.
+    2. **Automatic Topic Discovery:** Algorithms detect "Communities"—groups of words that interact frequently. This works as **automatic topic modeling** (e.g., distinguishing "Salary" issues from "Software" issues in employee feedback).
+    3. **Root Cause Analysis:** It identifies "Centrality" nodes that act as bridges. If "Update" connects a "Login" cluster and a "Payment" cluster, it suggests the update is the **Root Cause** of both issues.
+    4. **The AI Analyst:** The app aggregates the graph structure and sends it to the AI. The AI acts as a qualitative researcher, synthesizing these mathematical patterns into a human-readable narrative.
+    5. **Built for Real-World Data:** It automatically strips away "conversational noise" (timestamps, names) to focus purely on content, making it ideal for transcripts and logs.
+    """)
 
 st.warning("""
 **⚠️ Data Privacy & Security Notice**
