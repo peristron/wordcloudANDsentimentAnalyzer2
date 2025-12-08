@@ -1,4 +1,4 @@
-#  OPTIMIZED FOR DEPLOYMENT + LARGE FILES + GRAPH CLUSTERING + AI
+#  optimizing for public deployment + large files + graph analysis + the 'ai'
 #
 import io
 import re
@@ -21,12 +21,12 @@ from matplotlib import font_manager
 from itertools import pairwise
 import openai
 
-# --- GRAPH IMPORTS ---
+# --- graph imports
 import networkx as nx
 import networkx.algorithms.community as nx_comm
 from streamlit_agraph import agraph, Node, Edge, Config
 
-# --- OPTIONAL IMPORTS (Handle missing libraries gracefully) ---
+# --- optional imports, to handle any missing libraries gracefully
 try:
     import openpyxl
 except ImportError:
@@ -44,7 +44,7 @@ except ImportError:
     nltk = None
     SentimentIntensityAnalyzer = None
 
-# precompiled patterns
+# some pprecompiled patterns
 HTML_TAG_RE = re.compile(r"<[^>]+>")
 CHAT_ARTIFACT_RE = re.compile(
     r":\w+:"
@@ -55,9 +55,9 @@ CHAT_ARTIFACT_RE = re.compile(
     flags=re.IGNORECASE
 )
 
-# ---------------------------
-# AUTH & SESSION UTILS
-# ---------------------------
+# 
+# auth/session utils
+# 
 
 if 'total_cost' not in st.session_state: st.session_state['total_cost'] = 0.0
 if 'total_tokens' not in st.session_state: st.session_state['total_tokens'] = 0
@@ -79,9 +79,9 @@ def logout():
     st.session_state['authenticated'] = False
     st.session_state['ai_response'] = ""
 
-# ---------------------------
-# UTILITIES & SETUP
-# ---------------------------
+# 
+# utilities & setup
+# 
 
 @st.cache_resource(show_spinner="Initializing sentiment analyzer...")
 def setup_sentiment_analyzer():
@@ -151,9 +151,9 @@ def make_unique_header(raw_names: List[Optional[str]]) -> List[str]:
         result.append(unique)
     return result
 
-# ---------------------------
-# ROW READERS
-# ---------------------------
+# 
+# row readersROW READERS
+# 
 
 def read_rows_raw_lines(file_bytes: bytes, encoding_choice: str = "auto") -> Iterable[str]:
     def _iter_with_encoding(enc: str):
@@ -216,7 +216,7 @@ def read_rows_json(file_bytes: bytes, selected_key: str = None) -> Iterable[str]
     except Exception:
         pass
 
-# --- CSV / Excel Utils ---
+# --csv/excel utils
 
 def detect_csv_num_cols(file_bytes: bytes, encoding_choice: str = "auto", delimiter: str = ",") -> int:
     enc = "latin-1" if encoding_choice == "latin-1" else "utf-8"
@@ -333,8 +333,8 @@ def iter_excel_selected_columns(file_bytes: bytes, sheet_name: str, has_header: 
     wb.close()
 
 # ---------------------------
-# CORE PROCESSING
-# ---------------------------
+# core processing
+# 
 
 def is_url_token(tok: str) -> bool:
     t = tok.strip("()[]{}<>,.;:'\"!?").lower()
@@ -388,9 +388,9 @@ def process_rows_iter(
     elapsed = time.perf_counter() - start_time
     return {"counts": counts, "bigrams": bigram_counts or Counter(), "rows": total_rows, "elapsed": elapsed}
 
-# ---------------------------
-# STATS & ANALYTICS HELPERS
-# ---------------------------
+# --
+# stats/ analytics helpers
+#-
 
 def calculate_text_stats(counts: Counter, total_rows: int) -> Dict:
     total_tokens = sum(counts.values())
@@ -405,8 +405,8 @@ def calculate_text_stats(counts: Counter, total_rows: int) -> Dict:
     }
 
 # ---------------------------
-# SENTIMENT & VIZ
-# ---------------------------
+# senttiment, visualization
+# 
 
 @st.cache_data(show_spinner="Analyzing term sentiment...")
 def get_sentiments(_analyzer, terms: Tuple[str, ...]) -> Dict[str, float]:
@@ -442,11 +442,8 @@ def fig_to_png_bytes(fig: plt.Figure) -> BytesIO:
     buf.seek(0)
     return buf
 
-# ---------------------------
-# AI LOGIC
-# ---------------------------
-# ---------------------------
-# AI GENERATION LOGIC
+
+# ai generation logic
 # ---------------------------
 def generate_ai_insights(counts: Counter, bigrams: Counter, config: dict, graph_context: str = ""):
     try:
@@ -491,9 +488,9 @@ def generate_ai_insights(counts: Counter, bigrams: Counter, config: dict, graph_
     except Exception as e:
         return f"AI Error: {str(e)}"
 
-# ---------------------------
-# MAIN APP
-# ---------------------------
+# -
+# main app
+# ------------------------------
 
 st.set_page_config(page_title="Word Cloud & Graph Analytics (& Sentiment Analyzer)", layout="wide")
 st.title("🧠 Multi-File Word Cloud & Graph Analyzer")
@@ -505,7 +502,7 @@ When in doubt, pre-sanitize your data. This is a public app running on Streamlit
 
 analyzer = setup_sentiment_analyzer()
 
-# --- SIDEBAR START ---
+# --- side-bar start-
 with st.sidebar:
     st.header("🔐 AI Setup")
     if st.session_state['authenticated']:
@@ -625,9 +622,9 @@ with st.sidebar:
         chunksize = st.number_input("csv chunk size", 1_000, 100_000, 10_000, 1_000)
         compute_bigrams = st.checkbox("compute bigrams / graph", value=True, help="Required for Network Graph features")
 
-# ---------------------------
-# MAIN PROCESSING LOOP
-# ---------------------------
+# -----------------------------
+# main processing loop
+# --------------------------
 combined_counts, combined_bigrams, file_results = Counter(), Counter(), []
 if uploaded_files:
     st.subheader("📄 Per-File Processing")
@@ -650,7 +647,7 @@ if uploaded_files:
             per_file_font_path = combined_font_path if per_file_font_choice == use_combined_option else font_map.get(per_file_font_choice)
         else: per_file_font_choice, per_file_font_path = "(default)", None
         
-        # --- INPUT OPTIONS WITH DATA PREVIEW ---
+        # --- input options w/ data preview-
         with st.expander(f"🧩 Input Options: {fname}", expanded=False):
             if is_vtt: st.info("VTT transcript detected.")
             elif is_pdf: st.info("PDF document detected. Processing page by page.")
@@ -696,7 +693,7 @@ if uploaded_files:
                 st.info("JSON/JSONL File. Reads as line-delimited or standard array.")
                 json_key = st.text_input("Key to Extract (leave empty to read all text)", "", key=f"json_key_{idx}", help="If your JSON has objects like {'text': 'hello'}, enter 'text' here.")
 
-        # --- PROCESSING CONTAINER ---
+        # --- processing container-
         container = st.container()
         with container:
             st.markdown(f"#### {fname}")
@@ -772,8 +769,8 @@ if uploaded_files:
         else: st.warning(f"no tokens for {fname}.")
         overall_bar.progress(int(((idx + 1) / total_files) * 100))
 
-# ---------------------------
-# RESULTS & ANALYTICS
+# ----------------------------
+# results / analytics
 # ---------------------------
 term_sentiments = {}
 if enable_sentiment and combined_counts:
@@ -795,8 +792,8 @@ if combined_counts:
     except MemoryError: st.error("memory error: reduce image size.")
 
 # ---------------------------
-# COMBINED ANALYTICS SECTION
-# ---------------------------
+# Ccombined analytics 
+#
 
 if combined_counts:
     st.divider()
@@ -808,7 +805,7 @@ if combined_counts:
     
     if show_graph:
         st.subheader("🔗 Network Graph & Analytics")
-        # --- NEW: EXPLANATORY GUIDE ---
+        # --- explanatory guide section
         with st.expander("📘 How to Interpret this Graph (Click to Expand)", expanded=False):
             st.markdown("""
             **1. What do the lines mean?**
@@ -823,13 +820,13 @@ if combined_counts:
             *   **Big Nodes:** Words that appear frequently.
             *   **Central Nodes (in the middle):** Words that act as "bridges" connecting different topics.
             """)        
-        # 1. GRAPH CONFIGURATION & PHYSICS
+        # 1. graphing config/'physics'
         with st.expander("🛠️ Graph Settings & Physics", expanded=False):
             c1, c2, c3 = st.columns(3)
             min_edge_weight = c1.slider("Min Link Frequency", 2, 100, 5, help="Filter out rare connections.")
             max_nodes_graph = c1.slider("Max Nodes", 10, 200, 80, help="Fewer nodes = cleaner graph.")
             
-            # Physics Controls
+            # physics Controls
             repulsion_val = c2.slider("Repulsion (Spacing)", 100, 3000, 1000, help="Push nodes further apart.")
             edge_len_val = c2.slider("Edge Length", 50, 500, 250, help="Target length of lines.")
             
@@ -837,7 +834,7 @@ if combined_counts:
             directed_graph = c3.checkbox("Directed Arrows", False, help="Show direction of flow.")
             color_mode = c3.radio("Color By:", ["Community (Topic)", "Sentiment"], index=0)
 
-        # 2. BUILD GRAPH
+        # 2. build graph
         G = nx.DiGraph() if directed_graph else nx.Graph()
         filtered_bigrams = {k: v for k, v in combined_bigrams.items() if v >= min_edge_weight}
         sorted_connections = sorted(filtered_bigrams.items(), key=lambda x: x[1], reverse=True)[:max_nodes_graph]
@@ -848,15 +845,15 @@ if combined_counts:
             for (source, target), weight in sorted_connections:
                 G.add_edge(source, target, weight=weight)
 
-            # 3. CALCULATE METRICS
+            # 3. calculating metrics
             try:
                 deg_centrality = nx.degree_centrality(G)
             except:
                 deg_centrality = {n: 1 for n in G.nodes()}
 
-            # --- COMMUNITY DETECTION ---
+            # -community section
             community_map = {}
-            # NEW: Variable to store text for the AI
+            # variable to store text for the AI
             ai_cluster_info = "" 
             
             if color_mode == "Community (Topic)":
@@ -864,15 +861,15 @@ if combined_counts:
                 try:
                     communities = nx_comm.greedy_modularity_communities(G_undir)
                     
-                    # --- NEW: Build the string for the AI ---
+                    # --- to build the string for the AI
                     cluster_descriptions = []
                     for group_id, community in enumerate(communities):
-                        # Get top 5 most frequent words in this specific cluster
-                        # We use combined_counts to sort by frequency
+                        # get top 5 most frequent words in this specific cluster
+                        # using combined_counts to sort by frequency
                         top_in_cluster = sorted(list(community), key=lambda x: combined_counts[x], reverse=True)[:5]
                         cluster_descriptions.append(f"- Cluster {group_id+1}: {', '.join(top_in_cluster)}")
                         
-                        # Existing mapping logic
+                        # mapping logic
                         for node in community:
                             community_map[node] = group_id
                     
@@ -882,16 +879,16 @@ if combined_counts:
                 except Exception as e:
                     st.warning(f"Could not calculate communities: {e}")
 
-            # Keep this line! It is required for the node coloring step later.
+            # required for the node coloring step later
             community_colors = ["#FF4B4B", "#4589ff", "#ffa421", "#3cdb82", "#8b46ff", "#ff4b9f", "#00c0f2"]
 
             # 4. CREATE NODES
             nodes, edges = [], []
             for node_id in G.nodes():
-                # Dynamic sizing
+                # dynamic sizing
                 size = 15 + (deg_centrality.get(node_id, 0) * 80)
                 
-                # COLOR LOGIC
+                # colour logic
                 if color_mode == "Sentiment":
                     node_color = neu_color
                     if enable_sentiment:
@@ -908,26 +905,26 @@ if combined_counts:
                     size=size, 
                     color=node_color,
                     title=f"Term: {node_id}\nFreq: {combined_counts.get(node_id, 0)}\nCentrality: {deg_centrality.get(node_id, 0):.2f}",
-                    # UPDATED FONT SETTINGS FOR HIGH CONTRAST
+                    # font settings for higher contrast
                     font={
-                        'color': 'white',  # Text is always white
-                        'size': 20,        # Larger text
-                        'strokeWidth': 4,  # Thick outline
-                        'strokeColor': '#000000' # Black outline (ensures visibility on any background)
+                        'color': 'white',  # text is always white
+                        'size': 20,        # larger text
+                        'strokeWidth': 4,  # thick outline
+                        'strokeColor': '#000000' # black outline (ensures visibility on any background; some use dark mode, some don't)
                     }
                 ))
 
-            # 5. CREATE EDGES
+            # 5 create edges
             for (source, target), weight in sorted_connections:
                 width = 1 + math.log(weight) * 0.8
                 edges.append(Edge(
                     source=source, 
                     target=target, 
                     width=width, 
-                    # UPDATED COLOR: Lighter gray/white for better contrast on dark backgrounds
+                    # color: lighter gray/white for better contrast on dark backgrounds
                     color="#e0e0e0" 
                 ))
-            # 6. VISUALIZATION CONFIG
+            # 6 visualization logic
             config = Config(
                 width=1000, 
                 height=700, 
@@ -946,12 +943,12 @@ if combined_counts:
                 }
             )
             
-            # REPLACEMENT: Use st.info to make the text larger, brighter, and boxed.
+            # the "st.info" to make the text larger, brighter, and boxed
             st.info("💡 **Navigation Tip:** Use the buttons in the **bottom-right** of the graph to Zoom & Pan. \n\n🎨 **Legend:** Different colors represent distinct **'topics' (clusters)** detected in the text.")
             
             agraph(nodes=nodes, edges=edges, config=config)
 
-            # 7. TABBED ANALYTICS
+            # 7 tabbed analytics section
             st.markdown("### 📊 Graph Analytics")
             tab1, tab2, tab3, tab4, tab5 = st.tabs(["Basic Stats", "Degree Stats", "Centrality Measures", "Top Nodes", "Text Stats"])
             
@@ -1011,34 +1008,55 @@ else:
     st.info("upload files to start.")
 
 
-# --- AI ANALYSIS SECTION ---
+# --- ai analytics section
 if combined_counts and st.session_state['authenticated']:
     st.divider()
     st.subheader("🤖 AI Theme Detection")
     st.caption("Send the top 100 terms to the AI to detect likely topics and anomalies.")
-# ... inside the button click ...
-    if st.button("✨ Analyze Themes with AI", type="primary"):
-        with st.status("Analyzing top terms...", expanded=True) as status:
-            # CHECK IF ai_cluster_info EXISTS (It only exists if graph was drawn)
-            # If not, pass an empty string
-            g_context = locals().get('ai_cluster_info', "(Graph clustering not run)")
-            
-            # PASS THE NEW ARGUMENT
-            response = generate_ai_insights(combined_counts, combined_bigrams if compute_bigrams else None, ai_config, g_context)
-            
-            st.session_state['ai_response'] = response
-            status.update(label="Analysis Complete", state="complete", expanded=False)
-            
-            # 
-            st.rerun() 
-            # --------------------------
+
+
+import time
+import streamlit as st
+
+# Optional: initialize the key once at the top of your app/script
+st.session_state.setdefault("ai_response", None)
+
+if st.button("✨ Analyze Themes with AI", type="primary"):
+    # use status as a context manager for a clear lifecycle
+    with st.status("Analyzing top terms...", expanded=True) as status:
+        # CHECK IF ai_cluster_info exists (only exists if graph was drawn)
+        # if not, pass an empty string / message
+        g_context = locals().get("ai_cluster_info", "(Graph clustering not run)")
+
+        # pass arguments to your AI insights generator
+        response = generate_ai_insights(
+            combined_counts,
+            combined_bigrams if compute_bigrams else None,
+            ai_config,
+            g_context,
+        )
+
+        # save the response in session_state
+        st.session_state["ai_response"] = response
+
+        # update status and briefly show success before rerun
+        status.update(label="Analysis Complete", state="complete", expanded=False)
+        time.sleep(1.5)  # to allow user to see the success message
+
+    # rerun outside the status context block
+    st.rerun()
+
+# safely reference the stored response elsewhere in the app
+if st.session_state.get("ai_response"):
+    st.write(st.session_state["ai_response"])
+
 
 if st.session_state['ai_response']:
     st.markdown("### 📋 AI Insights")
     st.markdown(st.session_state['ai_response'])
     st.divider()
 
-# --- TABLES ---
+# ---tables
 if combined_counts:
     st.divider()
     st.subheader(f"📊 Frequency Tables (Top {top_n})")
