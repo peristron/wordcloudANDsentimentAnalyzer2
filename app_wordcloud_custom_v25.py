@@ -868,7 +868,13 @@ if combined_counts:
                     size=size, 
                     color=node_color,
                     title=f"Term: {node_id}\nFreq: {combined_counts.get(node_id, 0)}\nCentrality: {deg_centrality.get(node_id, 0):.2f}",
-                    font={'color': 'black' if bg_color == '#ffffff' else 'white', 'size': 14}
+                    # UPDATED FONT SETTINGS FOR HIGH CONTRAST
+                    font={
+                        'color': 'white',  # Text is always white
+                        'size': 20,        # Larger text
+                        'strokeWidth': 4,  # Thick outline
+                        'strokeColor': '#000000' # Black outline (ensures visibility on any background)
+                    }
                 ))
 
             # 5. CREATE EDGES
@@ -878,7 +884,8 @@ if combined_counts:
                     source=source, 
                     target=target, 
                     width=width, 
-                    color="#cccccc" if bg_color == '#ffffff' else "#555555"
+                    # UPDATED COLOR: Lighter gray/white for better contrast on dark backgrounds
+                    color="#e0e0e0" 
                 ))
 
             # 6. VISUALIZATION CONFIG
