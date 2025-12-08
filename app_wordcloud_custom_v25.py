@@ -888,14 +888,12 @@ if combined_counts:
                     color="#e0e0e0" 
                 ))
             # 6. VISUALIZATION CONFIG
-            
             config = Config(
                 width=1000, 
                 height=700, 
                 directed=directed_graph, 
                 physics=physics_enabled, 
                 hierarchy=False,
-                # Enable Zoom/Pan Buttons
                 interaction={"navigationButtons": True, "zoomView": True}, 
                 physicsSettings={
                     "solver": "forceAtlas2Based",
@@ -908,7 +906,9 @@ if combined_counts:
                 }
             )
             
-            st.caption("💡 **Tip:** Use the buttons in the bottom-right of the graph to Zoom/Pan. Different colors represent distinct 'topics' (clusters) detected in the text.")
+            # REPLACEMENT: Use st.info to make the text larger, brighter, and boxed.
+            st.info("💡 **Navigation Tip:** Use the buttons in the **bottom-right** of the graph to Zoom & Pan. \n\n🎨 **Legend:** Different colors represent distinct **'topics' (clusters)** detected in the text.")
+            
             agraph(nodes=nodes, edges=edges, config=config)
 
             # 7. TABBED ANALYTICS
