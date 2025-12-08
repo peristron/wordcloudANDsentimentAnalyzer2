@@ -797,20 +797,27 @@ if combined_counts:
     show_graph = compute_bigrams and combined_bigrams and st.checkbox("🕸️ Show Network Graph & Advanced Analytics", value=True)
     
     if show_graph:
+        import math
+        import networkx.algorithms.community as nx_comm # For clustering
+        
         st.subheader("🔗 Network Graph & Analytics")
         
         # 1. GRAPH CONFIGURATION & PHYSICS
         with st.expander("🛠️ Graph Settings & Physics", expanded=False):
             c1, c2, c3 = st.columns(3)
             min_edge_weight = c1.slider("Min Link Frequency", 2, 100, 5, help="Filter out rare connections.")
-            max_nodes_graph = c1.slider("Max Nodes", 10, 200, 60, help="Fewer nodes = cleaner graph.")
+            max_nodes_graph = c1.slider("Max Nodes", 10, 200, 80, help="Fewer nodes = cleaner graph.")
             
             # Physics Controls
-            repulsion_val = c2.slider("Repulsion (Spacing)", 100, 2000, 500, help="Push nodes further apart.")
-            edge_len_val = c2.slider("Edge Length", 50, 500, 200, help="Target length of lines.")
+            repulsion_val = c2.slider("Repulsion (Spacing)", 100, 3000, 1000, help="Push nodes further apart.")
+            edge_len_val = c2.slider("Edge Length", 50, 500, 250, help="Target length of lines.")
             
             physics_enabled = c3.checkbox("Enable Physics", True)
-            directed_graph = c3.checkbox("Directed Arrows", False, help="Uncheck to hide arrowheads for a cleaner view.")
+            # Default to Undirected for cleaner clustering views
+            directed_graph = c3.checkbox("Directed Arrows", False, help="Show direction of flow.")
+            
+            # Color Mode Selection
+            color_mode = c3.radio("Color By:", ["Community (Topic)", "Sentiment"], index=0)
 
         # 2. BUILD GRAPH
         G = nx.DiGraph() if directed_graph else nx.Graph()
@@ -823,58 +830,94 @@ if combined_counts:
             for (source, target), weight in sorted_connections:
                 G.add_edge(source, target, weight=weight)
 
-            # 3. VISUALIZATION
-            nodes, edges = [], []
+            # 3. CALCULATE METRICS
             try:
                 deg_centrality = nx.degree_centrality(G)
             except:
                 deg_centrality = {n: 1 for n in G.nodes()}
 
+            # --- COMMUNITY DETECTION (The "Meaning" Maker) ---
+            # This groups distinct topics into colors
+            community_map = {}
+            if color_mode == "Community (Topic)":
+                # Convert to undirected for community detection if needed
+                G_undir = G.to_undirected() if directed_graph else G
+                try:
+                    communities = nx_comm.greedy_modularity_communities(G_undir)
+                    # Create a map of Node -> GroupID
+                    for group_id, community in enumerate(communities):
+                        for node in community:
+                            community_map[node] = group_id
+                except Exception as e:
+                    st.warning(f"Could not calculate communities: {e}")
+
+            # Define a color palette for communities
+            community_colors = ["#FF4B4B", "#4589ff", "#ffa421", "#3cdb82", "#8b46ff", "#ff4b9f", "#00c0f2"]
+
+            # 4. CREATE NODES
+            nodes, edges = [], []
             for node_id in G.nodes():
-                # Node size based on centrality
-                size = 15 + (deg_centrality.get(node_id, 0) * 60)
-                node_color = neu_color
-                if enable_sentiment:
-                    score = term_sentiments.get(node_id, 0)
-                    if score >= pos_threshold: node_color = pos_color
-                    elif score <= neg_threshold: node_color = neg_color
+                # Dramatic sizing: Make the big nodes really pop
+                # Base size 15, max add 80 based on centrality
+                size = 15 + (deg_centrality.get(node_id, 0) * 80)
                 
+                # COLOR LOGIC
+                if color_mode == "Sentiment":
+                    node_color = neu_color
+                    if enable_sentiment:
+                        score = term_sentiments.get(node_id, 0)
+                        if score >= pos_threshold: node_color = pos_color
+                        elif score <= neg_threshold: node_color = neg_color
+                else:
+                    # Community Coloring
+                    group_id = community_map.get(node_id, 0)
+                    # Cycle through palette
+                    node_color = community_colors[group_id % len(community_colors)]
+
                 nodes.append(Node(
-                    id=node_id, label=node_id, size=size, color=node_color,
-                    title=f"Term: {node_id}\nFreq: {combined_counts.get(node_id, 0)}"
+                    id=node_id, 
+                    label=node_id, 
+                    size=size, 
+                    color=node_color,
+                    # Tooltip info
+                    title=f"Term: {node_id}\nFreq: {combined_counts.get(node_id, 0)}\nCentrality: {deg_centrality.get(node_id, 0):.2f}",
+                    font={'color': 'black' if bg_color == '#ffffff' else 'white', 'size': 14}
                 ))
 
+            # 5. CREATE EDGES
             for (source, target), weight in sorted_connections:
-                # Logarithmic scaling prevents massive lines
                 width = 1 + math.log(weight) * 0.8
-                
                 edges.append(Edge(
                     source=source, 
                     target=target, 
                     width=width, 
-                    color="#cccccc"
+                    color="#cccccc" if bg_color == '#ffffff' else "#555555"
                 ))
 
-            # Custom Physics Settings
+            # 6. VISUALIZATION CONFIG (Now with Zoom Buttons!)
             config = Config(
-                width=900, 
-                height=600, 
+                width=1000, 
+                height=700, 
                 directed=directed_graph, 
                 physics=physics_enabled, 
                 hierarchy=False,
+                # Enable Zoom/Pan Buttons
+                interaction={"navigationButtons": True, "zoomView": True}, 
                 physicsSettings={
                     "solver": "forceAtlas2Based",
                     "forceAtlas2Based": {
                         "gravitationalConstant": -abs(repulsion_val),
                         "springLength": edge_len_val,
-                        "springConstant": 0.08,
+                        "springConstant": 0.05,
                         "damping": 0.4
                     }
                 }
             )
+            
+            st.caption("💡 **Tip:** Use the buttons in the bottom-right of the graph to Zoom/Pan. Different colors represent distinct 'topics' (clusters) detected in the text.")
             agraph(nodes=nodes, edges=edges, config=config)
 
-            # 4. TABBED ANALYTICS
+            # 7. TABBED ANALYTICS
             st.markdown("### 📊 Graph Analytics")
             tab1, tab2, tab3, tab4, tab5 = st.tabs(["Basic Stats", "Degree Stats", "Centrality Measures", "Top Nodes", "Text Stats"])
             
@@ -894,7 +937,6 @@ if combined_counts:
 
             with tab3:
                 try:
-                    # These calculations require SCIPY to be installed
                     dc = nx.degree_centrality(G)
                     bc = nx.betweenness_centrality(G, weight='weight')
                     cc = nx.closeness_centrality(G)
@@ -904,7 +946,7 @@ if combined_counts:
                     df_cent = pd.DataFrame(centrality_data).set_index("Node")
                     st.dataframe(df_cent.sort_values("PageRank", ascending=False).head(50).style.background_gradient(cmap="Blues"), use_container_width=True, height=400)
                 except ImportError:
-                    st.error("⚠️ Library Missing: Please install 'scipy' to calculate PageRank and Betweenness.")
+                    st.error("⚠️ Library Missing: Please install 'scipy' to calculate PageRank.")
                 except Exception as e:
                     st.error(f"Could not calculate advanced centrality: {e}")
 
@@ -922,14 +964,6 @@ if combined_counts:
                 col_s2.metric("Unique Vocab", f"{text_stats['Unique Vocabulary']:,}")
                 col_s3.metric("Lexical Diversity", f"{text_stats['Lexical Diversity']}")
                 col_s4.metric("Avg Word Len", f"{text_stats['Avg Word Length']}")
-                
-    else:
-        st.subheader("📈 Text Statistics")
-        col_s1, col_s2, col_s3, col_s4 = st.columns(4)
-        col_s1.metric("Total Tokens", f"{text_stats['Total Tokens']:,}")
-        col_s2.metric("Unique Vocab", f"{text_stats['Unique Vocabulary']:,}")
-        col_s3.metric("Lexical Diversity", f"{text_stats['Lexical Diversity']}")
-        col_s4.metric("Avg Word Len", f"{text_stats['Avg Word Length']}")
 
 else: 
     st.info("upload files to start.")
