@@ -445,22 +445,31 @@ def fig_to_png_bytes(fig: plt.Figure) -> BytesIO:
 # ---------------------------
 # AI LOGIC
 # ---------------------------
-def generate_ai_insights(counts: Counter, bigrams: Counter, config: dict):
+# ---------------------------
+# AI GENERATION LOGIC
+# ---------------------------
+def generate_ai_insights(counts: Counter, bigrams: Counter, config: dict, graph_context: str = ""):
     try:
         top_unigrams = [w for w, c in counts.most_common(100)]
         top_bigrams = [" ".join(bg) for bg, c in bigrams.most_common(30)] if bigrams else ["(Bigrams disabled)"]
         
         context = f"""
         Top 100 Unigrams: {', '.join(top_unigrams)}
+        
         Top 30 Bigrams: {', '.join(top_bigrams)}
+        
+        Network Graph Clusters (detected topics):
+        {graph_context}
         """
         
         system_prompt = """You are a qualitative data analyst. 
         Analyze the provided word frequency lists (extracted from a text corpus) to identify likely themes, topics, and context.
-        Do NOT just list the words. Interpret them.
+        
+        Use the 'Network Graph Clusters' to specifically discuss how concepts are grouped together.
+        
         Format your response with markdown headers.
         1. Likely Subject Matter
-        2. Key Themes/Topics
+        2. Key Themes (based on Clusters)
         3. Potential Anomalies or Noise
         """
         
