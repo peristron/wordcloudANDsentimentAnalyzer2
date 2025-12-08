@@ -1028,6 +1028,10 @@ if combined_counts and st.session_state['authenticated']:
             
             st.session_state['ai_response'] = response
             status.update(label="Analysis Complete", state="complete", expanded=False)
+            
+            # 
+            st.rerun() 
+            # --------------------------
 
 if st.session_state['ai_response']:
     st.markdown("### 📋 AI Insights")
