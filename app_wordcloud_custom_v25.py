@@ -495,7 +495,7 @@ def generate_ai_insights(counts: Counter, bigrams: Counter, config: dict, graph_
 # MAIN APP
 # ---------------------------
 
-st.set_page_config(page_title="Word Cloud & Graph Analytics", layout="wide")
+st.set_page_config(page_title="Word Cloud & Graph Analytics (& Sentiment Analyzer)", layout="wide")
 st.title("🧠 Multi-File Word Cloud & Graph Analyzer")
 
 st.warning("""
