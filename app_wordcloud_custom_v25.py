@@ -816,37 +816,58 @@ if combined_counts:
 
     show_graph = compute_bigrams and combined_bigrams and st.checkbox("🕸️ Show Network Graph & Advanced Analytics", value=True)
     
+# You need to import math at the very top of your file
+import math 
+
+# ... [Inside the main app flow] ...
+
     if show_graph:
         st.subheader("🔗 Network Graph & Analytics")
         
         # 1. GRAPH CONFIGURATION
-        with st.expander("🛠️ Graph Settings", expanded=False):
-            col_g1, col_g2, col_g3 = st.columns(3)
-            min_edge_weight = col_g1.slider("Min Link Frequency", 2, 100, 5, help="Minimum times two words must appear together to be linked.")
-            max_nodes_graph = col_g2.slider("Max Nodes", 10, 300, 60, help="Limit graph to the top N most frequent connections.")
-            physics_enabled = col_g3.checkbox("Enable Physics", True)
-            directed_graph = col_g3.checkbox("Directed Arrows", True)
+        with st.expander("🛠️ Graph Settings & Physics", expanded=False):
+            c1, c2, c3 = st.columns(3)
+            min_edge_weight = c1.slider("Min Link Frequency", 2, 100, 5, help="Filter out rare connections.")
+            max_nodes_graph = c1.slider("Max Nodes", 10, 200, 50, help="Fewer nodes = cleaner graph.")
+            
+            # New Physics Controls
+            repulsion = c2.slider("Node Spacing (Repulsion)", 100, 2000, 800, help="Push nodes further apart.")
+            edge_len_val = c2.slider("Target Edge Length", 50, 500, 200, help="How long should the lines be?")
+            
+            physics_enabled = c3.checkbox("Enable Physics", True)
+            directed_graph = c3.checkbox("Show Arrows (Directed)", False, help="Turn off to remove arrowheads and clean up the view.")
 
         # 2. BUILD GRAPH
         G = nx.DiGraph() if directed_graph else nx.Graph()
+        
+        # Filter Logic
         filtered_bigrams = {k: v for k, v in combined_bigrams.items() if v >= min_edge_weight}
         sorted_connections = sorted(filtered_bigrams.items(), key=lambda x: x[1], reverse=True)[:max_nodes_graph]
         
         if not sorted_connections:
             st.warning("No connections found. Try lowering 'Min Link Frequency'.")
         else:
+            # Add edges
             for (source, target), weight in sorted_connections:
                 G.add_edge(source, target, weight=weight)
 
-            # 3. VISUALIZATION
+            # 3. VISUALIZATION PREP
             nodes, edges = [], []
+            
+            # Calculate metrics for sizing
             try:
                 deg_centrality = nx.degree_centrality(G)
             except:
                 deg_centrality = {n: 1 for n in G.nodes()}
+            
+            # Determine max weight for relative scaling
+            max_weight = max([w for s, t, w in sorted_connections]) if sorted_connections else 1
 
             for node_id in G.nodes():
-                size = 15 + (deg_centrality.get(node_id, 0) * 60)
+                # Dynamic node sizing
+                size = 15 + (deg_centrality.get(node_id, 0) * 40)
+                
+                # Dynamic coloring
                 node_color = neu_color
                 if enable_sentiment:
                     score = term_sentiments.get(node_id, 0)
@@ -854,68 +875,98 @@ if combined_counts:
                     elif score <= neg_threshold: node_color = neg_color
                 
                 nodes.append(Node(
-                    id=node_id, label=node_id, size=size, color=node_color,
-                    title=f"Freq: {combined_counts.get(node_id, 0)}"
+                    id=node_id,
+                    label=node_id,
+                    size=size,
+                    color=node_color,
+                    # Tooltip shows detailed stats
+                    title=f"Term: {node_id}\nFreq: {combined_counts.get(node_id, 0)}"
                 ))
 
             for (source, target), weight in sorted_connections:
-                edges.append(Edge(source=source, target=target, width=max(1, weight * 0.15), color="#cccccc"))
+                # Logarithmic scaling: Prevents massive lines for high-frequency common words
+                # Formula: Base Thickness + log(weight)
+                scaled_width = 1.0 + math.log(weight) * 0.5
+                
+                edges.append(Edge(
+                    source=source,
+                    target=target,
+                    width=scaled_width,
+                    color="#cccccc",
+                    # type="curvedCW" # Optional: makes lines curved
+                ))
 
-            config = Config(width=900, height=600, directed=directed_graph, physics=physics_enabled, hierarchy=False)
+            # 4. PHYSICS CONFIGURATION (Fixes the "Blob" issue)
+            config = Config(
+                width=900, 
+                height=600, 
+                directed=directed_graph,
+                physics=physics_enabled, 
+                hierarchy=False,
+                # ForceAtlas2Based is often better for text networks than the default BarnsHut
+                physicsSettings={
+                    "solver": "forceAtlas2Based",
+                    "forceAtlas2Based": {
+                        "gravitationalConstant": -abs(repulsion), # Negative pushes nodes apart
+                        "springLength": edge_len_val,
+                        "springConstant": 0.08,
+                        "damping": 0.4
+                    }
+                }
+            )
+            
+            # Render
             agraph(nodes=nodes, edges=edges, config=config)
 
-            # 4. TABBED ANALYTICS
+            # 5. TABBED ANALYTICS
             st.markdown("### 📊 Graph Analytics")
             tab1, tab2, tab3, tab4, tab5 = st.tabs(["Basic Stats", "Degree Stats", "Centrality Measures", "Top Nodes", "Text Stats"])
             
             with tab1:
                 col_b1, col_b2, col_b3 = st.columns(3)
                 col_b1.metric("Nodes", G.number_of_nodes())
-                col_b2.metric("Edges (Connections)", G.number_of_edges())
-                try: col_b3.metric("Graph Density", f"{nx.density(G):.4f}")
+                col_b2.metric("Edges", G.number_of_edges())
+                try: col_b3.metric("Density", f"{nx.density(G):.4f}")
                 except: pass
 
             with tab2:
                 degrees = [val for (node, val) in G.degree()]
-                avg_degree = sum(degrees) / float(len(degrees)) if degrees else 0
-                st.metric("Average Degree", f"{avg_degree:.2f}")
-                degree_counts = pd.DataFrame(degrees, columns=["Connections"])
-                st.bar_chart(degree_counts["Connections"].value_counts().sort_index(), use_container_width=True)
+                if degrees:
+                    st.metric("Avg Connections", f"{sum(degrees)/len(degrees):.2f}")
+                    st.bar_chart(pd.Series(degrees).value_counts().sort_index(), use_container_width=True)
 
             with tab3:
                 try:
+                    # Scipy is required here
                     dc = nx.degree_centrality(G)
                     bc = nx.betweenness_centrality(G, weight='weight')
                     cc = nx.closeness_centrality(G)
+                    # PageRank needs scipy
                     pr = nx.pagerank(G, weight='weight')
-                    centrality_data = [{"Node": n, "Degree Centrality": dc.get(n,0), "Betweenness": bc.get(n,0), "Closeness": cc.get(n,0), "PageRank": pr.get(n,0)} for n in G.nodes()]
-                    df_cent = pd.DataFrame(centrality_data).set_index("Node")
-                    st.dataframe(df_cent.sort_values("PageRank", ascending=False).head(50).style.background_gradient(cmap="Blues"), use_container_width=True, height=400)
+                    
+                    data = [{"Node": n, "Degree": dc[n], "Betweenness": bc[n], "Closeness": cc[n], "PageRank": pr[n]} for n in G.nodes()]
+                    st.dataframe(pd.DataFrame(data).set_index("Node").sort_values("PageRank", ascending=False).style.background_gradient(cmap="Blues"), use_container_width=True)
+                except ImportError:
+                    st.error("dependency missing: Please install 'scipy' to see Advanced Centrality.")
                 except Exception as e:
-                    st.error(f"Could not calculate advanced centrality: {e}")
+                    st.error(f"Calculation Error: {e}")
 
             with tab4:
-                node_weights = {n: 0 for n in G.nodes()}
-                for u, v, data in G.edges(data=True):
-                    w = data.get('weight', 1)
-                    node_weights[u] += w
-                    node_weights[v] += w
-                st.dataframe(pd.DataFrame(list(node_weights.items()), columns=["Node", "Weighted Degree"]).sort_values("Weighted Degree", ascending=False).head(50), use_container_width=True)
+                # Simple weight sum
+                nw = {n: 0 for n in G.nodes()}
+                for u, v, d in G.edges(data=True):
+                    w = d.get('weight', 1)
+                    nw[u] += w
+                    nw[v] += w
+                st.dataframe(pd.DataFrame(list(nw.items()), columns=["Node", "Total Weight"]).sort_values("Total Weight", ascending=False).head(50), use_container_width=True)
 
             with tab5:
-                col_s1, col_s2, col_s3, col_s4 = st.columns(4)
-                col_s1.metric("Total Tokens", f"{text_stats['Total Tokens']:,}")
-                col_s2.metric("Unique Vocab", f"{text_stats['Unique Vocabulary']:,}")
-                col_s3.metric("Lexical Diversity", f"{text_stats['Lexical Diversity']}")
-                col_s4.metric("Avg Word Len", f"{text_stats['Avg Word Length']}")
-                
-    else:
-        st.subheader("📈 Text Statistics")
-        col_s1, col_s2, col_s3, col_s4 = st.columns(4)
-        col_s1.metric("Total Tokens", f"{text_stats['Total Tokens']:,}")
-        col_s2.metric("Unique Vocab", f"{text_stats['Unique Vocabulary']:,}")
-        col_s3.metric("Lexical Diversity", f"{text_stats['Lexical Diversity']}")
-        col_s4.metric("Avg Word Len", f"{text_stats['Avg Word Length']}")
+                # Text Stats from earlier calculation
+                c1, c2, c3, c4 = st.columns(4)
+                c1.metric("Tokens", f"{text_stats['Total Tokens']:,}")
+                c2.metric("Vocab", f"{text_stats['Unique Vocabulary']:,}")
+                c3.metric("Diversity", f"{text_stats['Lexical Diversity']}")
+                c4.metric("Avg Len", f"{text_stats['Avg Word Length']}")
 
 else: 
     st.info("upload files to start.")
