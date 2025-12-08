@@ -821,7 +821,7 @@ import math
 
 # ... [Inside the main app flow] ...
 
-    if show_graph:
+if show_graph:
         st.subheader("🔗 Network Graph & Analytics")
         
         # 1. GRAPH CONFIGURATION
