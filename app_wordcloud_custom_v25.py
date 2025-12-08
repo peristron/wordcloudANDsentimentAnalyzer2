@@ -799,7 +799,21 @@ if combined_counts:
     
     if show_graph:
         st.subheader("🔗 Network Graph & Analytics")
-        
+        # --- NEW: EXPLANATORY GUIDE ---
+        with st.expander("📘 How to Interpret this Graph (Click to Expand)", expanded=False):
+            st.markdown("""
+            **1. What do the lines mean?**
+            A line (edge) exists if two words appear **immediately next to each other** in your text. 
+            *   *Example:* If you see `oauth` connected to `scopes`, it means the phrase "oauth scopes" appears frequently.
+            
+            **2. What do the colors mean?**
+            Colors represent **Communities**. The algorithm detects groups of words that talk to each other more than they talk to the rest of the graph.
+            *   *Insight:* If `budget`, `finance`, and `q4` are all **Blue**, that is likely your "Financial Topic" cluster.
+            
+            **3. What is "Centrality"?**
+            *   **Big Nodes:** Words that appear frequently.
+            *   **Central Nodes (in the middle):** Words that act as "bridges" connecting different topics.
+            """)        
         # 1. GRAPH CONFIGURATION & PHYSICS
         with st.expander("🛠️ Graph Settings & Physics", expanded=False):
             c1, c2, c3 = st.columns(3)
