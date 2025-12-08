@@ -887,7 +887,6 @@ if combined_counts:
                     # UPDATED COLOR: Lighter gray/white for better contrast on dark backgrounds
                     color="#e0e0e0" 
                 ))
-
             # 6. VISUALIZATION CONFIG
             config = Config(
                 width=1000, 
@@ -895,7 +894,14 @@ if combined_counts:
                 directed=directed_graph, 
                 physics=physics_enabled, 
                 hierarchy=False,
-                interaction={"navigationButtons": True, "zoomView": True}, 
+                # UPDATE: Hide ugly buttons, enable smooth Mouse/Trackpad interaction
+                interaction={
+                    "navigationButtons": False,  # Hide the low-contrast green buttons
+                    "zoomView": True,           # Enable Mouse Wheel Zoom
+                    "dragView": True,           # Enable Click-to-Pan
+                    "hover": True,              # Enable Tooltips on hover
+                    "tooltipDelay": 200
+                },
                 physicsSettings={
                     "solver": "forceAtlas2Based",
                     "forceAtlas2Based": {
@@ -907,7 +913,7 @@ if combined_counts:
                 }
             )
             
-            st.caption("💡 **Tip:** Use the buttons in the bottom-right of the graph to Zoom/Pan. Different colors represent distinct 'topics' (clusters) detected in the text.")
+            st.caption("💡 **Navigation:** Scroll to **Zoom**, Click & Drag to **Pan**. Different colors represent distinct 'topics' (clusters).")
             agraph(nodes=nodes, edges=edges, config=config)
 
             # 7. TABBED ANALYTICS
