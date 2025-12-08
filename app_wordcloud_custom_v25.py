@@ -832,7 +832,7 @@ if combined_counts:
             **3. What is "Centrality"?**
             *   **Big Nodes:** Words that appear frequently.
             *   **Central Nodes (in the middle):** Words that act as "bridges" connecting different topics.
-            *   **TIP: just select and drag a node in the graph to see how...central it really is (i.e. is the whole 'net' getting dragged in the node's 'wake'?)
+            *   **TIP**: just select and drag a node in the graph to see how...central it really is (i.e. is the whole 'net' getting dragged in the node's 'wake'?)
             """)        
         # 1. graphing config/'physics'
         with st.expander("🛠️ Graph Settings & Physics", expanded=False):
