@@ -496,9 +496,9 @@ st.set_page_config(page_title="Word Cloud & Graph Analytics (& Sentiment Analyze
 st.title("🧠 Multi-File Word Cloud & Graph Analyzer (& Sentiment Analyzer)")
 
 
-with st.expander("📘 Using this App for Data Insights", expanded=False):
+with st.expander("📘 Using this App for (some types of 'dirty') Data Insights", expanded=False):
     st.markdown("""
-    **The Unstructured Data Intelligence Engine**  
+    **The Unstructured Data Intel Engine**  
     This app combines **Network Graph Theory** with **Generative AI** to reveal context and relationships hidden in text.
 
     1. **Relational Context (The "Why"):** Instead of just counting words, this app maps relationships. It differentiates between concepts like "Good Battery" and "Bad Battery" based on distinct structural pathways rather than just frequency.
