@@ -1,4 +1,4 @@
-#  OPTIMIZED FOR DEPLOYMENT + AI ANALYSIS + KNOWLEDGE GRAPH
+#  OPTIMIZED FOR DEPLOYMENT + AI ANALYSIS + KNOWLEDGE GRAPH#  OPTIMIZED FOR DEPLOYMENT + AI ANALYSIS + ADVANCED GRAPH ANALYTICS
 #
 import io
 import re
@@ -448,7 +448,7 @@ def generate_ai_insights(counts: Counter, bigrams: Counter, config: dict):
 # streamlit app
 # ---------------------------
 
-st.set_page_config(page_title="Word Cloud & Network AI", layout="wide")
+st.set_page_config(page_title="Word Cloud & Graph Analytics", layout="wide")
 st.title("🧠 Multi-File Word Cloud & Graph Analyzer")
 
 st.warning("""
@@ -707,106 +707,180 @@ if combined_counts:
         st.download_button("📥 download combined png", fig_to_png_bytes(fig), "combined_wc.png", "image/png")
         plt.close(fig); gc.collect()
     except MemoryError: st.error("memory error: reduce image size.")
-    
-    # --- TEXT STATISTICS DASHBOARD (NEW) ---
+
+# ---------------------------
+# COMBINED ANALYTICS SECTION (Graph + Stats)
+# ---------------------------
+
+if combined_counts:
     st.divider()
-    st.subheader("📈 Text Statistics")
+    
+    # Calculate Text Stats (We calculate them here to use inside the tabs later)
     total_processed_rows = sum(f['rows'] for f in file_results)
-    stats = calculate_text_stats(combined_counts, total_processed_rows)
+    text_stats = calculate_text_stats(combined_counts, total_processed_rows)
+
+    # Only show Tabs if we have graph data enabled; otherwise just show Text Stats
+    show_graph = compute_bigrams and combined_bigrams and st.checkbox("🕸️ Show Network Graph & Advanced Analytics", value=True)
     
-    col_stat1, col_stat2, col_stat3, col_stat4 = st.columns(4)
-    col_stat1.metric("Total Tokens", f"{stats['Total Tokens']:,}", help="Total number of valid words processed after cleaning.")
-    col_stat2.metric("Unique Vocabulary", f"{stats['Unique Vocabulary']:,}", help="Number of distinct words found.")
-    col_stat3.metric("Lexical Diversity", f"{stats['Lexical Diversity']}", help="Unique Words / Total Tokens. Higher number means richer vocabulary.")
-    col_stat4.metric("Avg Word Length", f"{stats['Avg Word Length']}", help="Average number of characters per word.")
-
-else: st.info("upload files to start.")
-
-
-# --- KNOWLEDGE GRAPH / NETWORK VISUALIZATION (NEW) ---
-if compute_bigrams and combined_bigrams and st.checkbox("🕸️ Show Network Graph (Beta)", value=False):
-    st.divider()
-    st.subheader("🔗 Co-occurrence Network")
-    st.caption("This graph visualizes how words connect. A connection is drawn if words appear immediately next to each other (Bigrams).")
-
-    # Graph Config Layout
-    col_g_conf, col_g_viz = st.columns([1, 3])
-    
-    with col_g_conf:
-        st.markdown("#### Graph Settings")
-        min_edge_weight = st.slider("Min Frequency", 2, 50, 5, help="Only show connections that appear at least this many times.")
-        max_nodes_graph = st.slider("Max Nodes", 10, 200, 50, help="Limit graph complexity by showing only top connected words.")
-        physics_enabled = st.checkbox("Enable Physics", True, help="Allows you to drag nodes around.")
-        directed_graph = st.checkbox("Directed Arrows", True, help="Show direction of flow (word A -> word B).")
-
-    with col_g_viz:
-        # Build Graph
-        G = nx.DiGraph() if directed_graph else nx.Graph()
+    if show_graph:
+        st.subheader("🔗 Network Graph & Analytics")
         
-        # Filter Bigrams
+        # 1. GRAPH CONFIGURATION
+        with st.expander("🛠️ Graph Settings", expanded=False):
+            col_g1, col_g2, col_g3 = st.columns(3)
+            min_edge_weight = col_g1.slider("Min Link Frequency", 2, 100, 5, help="Minimum times two words must appear together to be linked.")
+            max_nodes_graph = col_g2.slider("Max Nodes", 10, 300, 60, help="Limit graph to the top N most frequent connections.")
+            physics_enabled = col_g3.checkbox("Enable Physics", True)
+            directed_graph = col_g3.checkbox("Directed Arrows", True)
+
+        # 2. BUILD GRAPH
+        G = nx.DiGraph() if directed_graph else nx.Graph()
         filtered_bigrams = {k: v for k, v in combined_bigrams.items() if v >= min_edge_weight}
         sorted_connections = sorted(filtered_bigrams.items(), key=lambda x: x[1], reverse=True)[:max_nodes_graph]
         
         if not sorted_connections:
-            st.warning("No connections found with these settings. Try lowering 'Min Frequency'.")
+            st.warning("No connections found. Try lowering 'Min Link Frequency'.")
         else:
             for (source, target), weight in sorted_connections:
                 G.add_edge(source, target, weight=weight)
-            
-            # Calculate Centrality
-            # Degree Centrality = How many connections a node has (normalized)
-            centrality = nx.degree_centrality(G)
-            
-            # Create Agraph Nodes/Edges
+
+            # 3. VISUALIZATION
             nodes, edges = [], []
             
+            # Pre-calculate centrality for sizing
+            try:
+                # We use degree centrality for node sizing
+                deg_centrality = nx.degree_centrality(G)
+            except:
+                deg_centrality = {n: 1 for n in G.nodes()}
+
             for node_id in G.nodes():
-                # Size node based on centrality
-                base_size = 15
-                size = base_size + (centrality.get(node_id, 0) * 50)
+                # Dynamic sizing based on centrality
+                size = 15 + (deg_centrality.get(node_id, 0) * 60)
                 
-                # Color based on sentiment if enabled
+                # Dynamic coloring based on sentiment
                 node_color = neu_color
                 if enable_sentiment:
                     score = term_sentiments.get(node_id, 0)
                     if score >= pos_threshold: node_color = pos_color
                     elif score <= neg_threshold: node_color = neg_color
-
+                
                 nodes.append(Node(
                     id=node_id,
                     label=node_id,
                     size=size,
                     color=node_color,
-                    title=f"Freq: {combined_counts.get(node_id, 0)} | Centrality: {centrality.get(node_id,0):.3f}"
+                    title=f"Freq: {combined_counts.get(node_id, 0)}"
                 ))
 
             for (source, target), weight in sorted_connections:
                 edges.append(Edge(
                     source=source,
                     target=target,
-                    # label=str(weight), # Uncomment to see numbers on lines
-                    width=max(1, weight * 0.1),
+                    width=max(1, weight * 0.15), # Thicker lines for heavier weights
                     color="#cccccc"
                 ))
 
-            config = Config(
-                width=800, 
-                height=600, 
-                directed=directed_graph,
-                physics=physics_enabled, 
-                hierarchy=False,
-                nodeHighlightBehavior=True, 
-                highlightColor="#F7A7A6",
-                collapsible=False
-            )
-
-            agraph(nodes=nodes, edges=edges, config=config)
+            config = Config(width=900, height=600, directed=directed_graph, physics=physics_enabled, hierarchy=False)
             
-            # Centrality Table
-            with st.expander("📊 Graph Analytics (Centrality Details)"):
-                st.info("**Centrality** measures how 'important' a word is in the network. Words with high centrality act as bridges or hubs connecting different topics.")
-                c_data = [{"Word": k, "Centrality": v} for k, v in centrality.items()]
-                st.dataframe(pd.DataFrame(c_data).sort_values("Centrality", ascending=False).head(20), use_container_width=True)
+            # Render the graph
+            return_val = agraph(nodes=nodes, edges=edges, config=config)
+
+            # 4. TABBED ANALYTICS (Replicating the target app)
+            st.markdown("### 📊 Graph Analytics")
+            tab1, tab2, tab3, tab4, tab5 = st.tabs(["Basic Stats", "Degree Stats", "Centrality Measures", "Top Nodes", "Text Stats"])
+            
+            # --- TAB 1: BASIC STATS ---
+            with tab1:
+                col_b1, col_b2, col_b3 = st.columns(3)
+                col_b1.metric("Nodes", G.number_of_nodes())
+                col_b2.metric("Edges (Connections)", G.number_of_edges())
+                try:
+                    density = nx.density(G)
+                    col_b3.metric("Graph Density", f"{density:.4f}", help="0 = no connections, 1 = everyone connected to everyone.")
+                except: pass
+
+            # --- TAB 2: DEGREE STATS ---
+            with tab2:
+                # Degree = number of connections a node has
+                degrees = [val for (node, val) in G.degree()]
+                avg_degree = sum(degrees) / float(len(degrees)) if degrees else 0
+                st.metric("Average Degree", f"{avg_degree:.2f}")
+                
+                # Histogram data
+                degree_counts = pd.DataFrame(degrees, columns=["Connections"])
+                st.bar_chart(degree_counts["Connections"].value_counts().sort_index(), use_container_width=True)
+                st.caption("Distribution of Node Connections (X=Number of Connections, Y=Count of Nodes)")
+
+            # --- TAB 3: CENTRALITY MEASURES (The complex math from Screenshot 2) ---
+            with tab3:
+                try:
+                    # Calculate different types of importance
+                    dc = nx.degree_centrality(G)
+                    bc = nx.betweenness_centrality(G, weight='weight')
+                    cc = nx.closeness_centrality(G)
+                    pr = nx.pagerank(G, weight='weight')
+                    
+                    # Combine into one DataFrame
+                    centrality_data = []
+                    for node in G.nodes():
+                        centrality_data.append({
+                            "Node": node,
+                            "Degree Centrality": dc.get(node, 0),
+                            "Betweenness": bc.get(node, 0),
+                            "Closeness": cc.get(node, 0),
+                            "PageRank": pr.get(node, 0)
+                        })
+                    
+                    df_cent = pd.DataFrame(centrality_data).set_index("Node")
+                    
+                    # Formatting to match the screenshot style
+                    st.dataframe(
+                        df_cent.sort_values("PageRank", ascending=False).head(50).style.background_gradient(cmap="Blues"), 
+                        use_container_width=True,
+                        height=400
+                    )
+                    st.info("""
+                    **Legend:**
+                    *   **Degree:** Simply has many connections.
+                    *   **Betweenness:** Acts as a bridge connecting different clusters.
+                    *   **Closeness:** Can reach other nodes quickly.
+                    *   **PageRank:** Connected to other important nodes (Google's algorithm).
+                    """)
+                except Exception as e:
+                    st.error(f"Could not calculate advanced centrality: {e}")
+
+            # --- TAB 4: TOP NODES ---
+            with tab4:
+                # Top nodes by internal weight (frequency in the graph)
+                node_weights = {n: 0 for n in G.nodes()}
+                for u, v, data in G.edges(data=True):
+                    w = data.get('weight', 1)
+                    node_weights[u] += w
+                    node_weights[v] += w
+                
+                top_nodes_df = pd.DataFrame(list(node_weights.items()), columns=["Node", "Weighted Degree"])
+                st.dataframe(top_nodes_df.sort_values("Weighted Degree", ascending=False).head(50), use_container_width=True)
+
+            # --- TAB 5: TEXT STATS (Moved here to match target app) ---
+            with tab5:
+                col_s1, col_s2, col_s3, col_s4 = st.columns(4)
+                col_s1.metric("Total Tokens", f"{text_stats['Total Tokens']:,}")
+                col_s2.metric("Unique Vocab", f"{text_stats['Unique Vocabulary']:,}")
+                col_s3.metric("Lexical Diversity", f"{text_stats['Lexical Diversity']}")
+                col_s4.metric("Avg Word Len", f"{text_stats['Avg Word Length']}")
+                
+    else:
+        # Fallback if Graph is unchecked: Just show the Text Stats panel
+        st.subheader("📈 Text Statistics")
+        col_s1, col_s2, col_s3, col_s4 = st.columns(4)
+        col_s1.metric("Total Tokens", f"{text_stats['Total Tokens']:,}")
+        col_s2.metric("Unique Vocab", f"{text_stats['Unique Vocabulary']:,}")
+        col_s3.metric("Lexical Diversity", f"{text_stats['Lexical Diversity']}")
+        col_s4.metric("Avg Word Len", f"{text_stats['Avg Word Length']}")
+
+else: 
+    st.info("upload files to start.")
 
 
 # --- AI ANALYSIS SECTION ---
@@ -833,7 +907,7 @@ if combined_counts:
         1.  **Upload Data:** Drag and drop CSV, Excel, or VTT files in the sidebar.
         2.  **Configure Input:** If using Excel/CSV, open the **"🧩 Input Options"** expander for that file to select which column contains the text (e.g., "Comments", "Transcript").
         3.  **Visualize:** The Word Cloud updates automatically.
-        4.  **Network Graph:** Check "Show Network Graph" to see how words link together.
+        4.  **Network Graph:** Check "Show Network Graph" to see how words link together. Use the Tabs below the graph to see **Centrality** and **Stats**.
         5.  **Analyze:** Log in via the sidebar to unlock the **"✨ Analyze Themes"** button for AI-powered insights.
         """)
 
