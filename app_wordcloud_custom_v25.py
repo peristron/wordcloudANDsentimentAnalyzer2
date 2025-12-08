@@ -1,4 +1,4 @@
-#  OPTIMIZED FOR DEPLOYMENT + AI ANALYSIS + KNOWLEDGE GRAPH#  OPTIMIZED FOR DEPLOYMENT + AI ANALYSIS + ADVANCED GRAPH ANALYTICS
+#  OPTIMIZED FOR DEPLOYMENT + LARGE FILES (750MB+) + DATA PREVIEW
 #
 import io
 import re
@@ -6,6 +6,7 @@ import html
 import gc
 import time
 import csv
+import json
 import string
 from collections import Counter
 from typing import Dict, List, Tuple, Iterable, Optional, Callable
@@ -19,17 +20,21 @@ from matplotlib import font_manager
 from itertools import pairwise
 import openai
 
-# --- NEW IMPORTS FOR GRAPH ---
+# --- GRAPH IMPORTS ---
 import networkx as nx
 from streamlit_agraph import agraph, Node, Edge, Config
 
-# optional excel engine
+# --- OPTIONAL IMPORTS (Handle missing libraries gracefully) ---
 try:
     import openpyxl
-except Exception:
+except ImportError:
     openpyxl = None
 
-# sentiment analysis engine
+try:
+    import pypdf
+except ImportError:
+    pypdf = None
+
 try:
     import nltk
     from nltk.sentiment.vader import SentimentIntensityAnalyzer
@@ -73,7 +78,7 @@ def logout():
     st.session_state['ai_response'] = ""
 
 # ---------------------------
-# utilities & setup
+# UTILITIES & SETUP
 # ---------------------------
 
 @st.cache_resource(show_spinner="Initializing sentiment analyzer...")
@@ -145,7 +150,7 @@ def make_unique_header(raw_names: List[Optional[str]]) -> List[str]:
     return result
 
 # ---------------------------
-# row readers
+# ROW READERS (Enhanced for Multi-Format)
 # ---------------------------
 
 def read_rows_raw_lines(file_bytes: bytes, encoding_choice: str = "auto") -> Iterable[str]:
@@ -167,6 +172,53 @@ def read_rows_vtt(file_bytes: bytes, encoding_choice: str = "auto") -> Iterable[
                 continue
         yield line
 
+def read_rows_pdf(file_bytes: bytes) -> Iterable[str]:
+    if pypdf is None: return
+    bio = io.BytesIO(file_bytes)
+    try:
+        reader = pypdf.PdfReader(bio)
+        for page in reader.pages:
+            text = page.extract_text()
+            if text:
+                yield text
+    except Exception:
+        yield ""
+
+def read_rows_json(file_bytes: bytes, selected_key: str = None) -> Iterable[str]:
+    bio = io.BytesIO(file_bytes)
+    # Try reading as line-delimited JSON (JSONL) first
+    try:
+        wrapper = io.TextIOWrapper(bio, encoding="utf-8", errors="replace")
+        for line in wrapper:
+            if not line.strip(): continue
+            try:
+                obj = json.loads(line)
+                if selected_key and isinstance(obj, dict):
+                    yield str(obj.get(selected_key, ""))
+                elif isinstance(obj, str):
+                    yield obj
+                else:
+                    yield str(obj)
+            except json.JSONDecodeError:
+                # If fail on line 1, might be standard JSON array
+                bio.seek(0)
+                data = json.load(wrapper)
+                if isinstance(data, list):
+                    for item in data:
+                        if selected_key and isinstance(item, dict):
+                            yield str(item.get(selected_key, ""))
+                        else:
+                            yield str(item)
+                elif isinstance(data, dict):
+                     # If it's a single dict, try to yield the key or just values
+                     if selected_key: yield str(data.get(selected_key, ""))
+                     else: yield str(data)
+                break 
+    except Exception:
+        pass
+
+# --- CSV / Excel Utils ---
+
 def detect_csv_num_cols(file_bytes: bytes, encoding_choice: str = "auto", delimiter: str = ",") -> int:
     enc = "latin-1" if encoding_choice == "latin-1" else "utf-8"
     bio = io.BytesIO(file_bytes)
@@ -184,6 +236,18 @@ def get_csv_columns(file_bytes: bytes, encoding_choice: str = "auto", delimiter:
         if first is None: return []
         return make_unique_header(first) if has_header else [f"col_{i}" for i in range(len(first))]
 
+def get_csv_preview(file_bytes: bytes, encoding_choice: str = "auto", delimiter: str = ",", has_header: bool = True, rows: int = 5) -> pd.DataFrame:
+    enc = "latin-1" if encoding_choice == "latin-1" else "utf-8"
+    bio = io.BytesIO(file_bytes)
+    try:
+        df = pd.read_csv(bio, delimiter=delimiter, header=0 if has_header else None, nrows=rows, encoding=enc, on_bad_lines='skip')
+        # If no header, rename cols
+        if not has_header:
+            df.columns = [f"col_{i}" for i in range(len(df.columns))]
+        return df
+    except:
+        return pd.DataFrame()
+
 def iter_csv_selected_columns(file_bytes: bytes, encoding_choice: str, delimiter: str, has_header: bool, selected_columns: List[str], join_with: str = " ", drop_empty: bool = True) -> Iterable[str]:
     enc = "latin-1" if encoding_choice == "latin-1" else "utf-8"
     bio = io.BytesIO(file_bytes)
@@ -191,17 +255,22 @@ def iter_csv_selected_columns(file_bytes: bytes, encoding_choice: str, delimiter
         rdr = csv.reader(wrapper, delimiter=delimiter)
         first = next(rdr, None)
         if first is None: return
+        
+        # Determine mapping based on header setting
         if has_header:
             header = make_unique_header(first)
             name_to_idx = {n: i for i, n in enumerate(header)}
-            idxs = [name_to_idx[n] for n in selected_columns if n in name_to_idx]
         else:
-            header = [f"col_{i}" for i in range(len(first))]
-            name_to_idx = {n: i for i, n in enumerate(header)}
+            # If no header, cols are col_0, col_1 etc.
+            name_to_idx = {f"col_{i}": i for i in range(len(first))}
+            
+            # Process the very first row since it is data
             idxs = [name_to_idx[n] for n in selected_columns if n in name_to_idx]
             vals = [first[i] if i < len(first) else "" for i in idxs]
             if drop_empty: vals = [v for v in vals if v]
             yield join_with.join(str(v) for v in vals)
+
+        idxs = [name_to_idx[n] for n in selected_columns if n in name_to_idx]
         for row in rdr:
             vals = [row[i] if i < len(row) else "" for i in idxs]
             if drop_empty: vals = [v for v in vals if v]
@@ -215,16 +284,24 @@ def get_excel_sheetnames(file_bytes: bytes) -> List[str]:
     wb.close()
     return sheets
 
-def get_excel_columns(file_bytes: bytes, sheet_name: str, has_header: bool = True) -> List[str]:
-    if openpyxl is None: return []
+def get_excel_preview(file_bytes: bytes, sheet_name: str, has_header: bool = True, rows: int = 5) -> pd.DataFrame:
+    if openpyxl is None: return pd.DataFrame()
     bio = io.BytesIO(file_bytes)
-    wb = openpyxl.load_workbook(bio, read_only=True, data_only=True)
-    ws = wb[sheet_name]
-    gen = ws.iter_rows(values_only=True, min_row=1, max_row=1)
-    first = next(gen, None)
-    wb.close()
-    if first is None: return []
-    return make_unique_header(list(first)) if has_header else [f"col_{i}" for i in range(len(first))]
+    try:
+        # read specific sheet
+        df = pd.read_excel(bio, sheet_name=sheet_name, header=0 if has_header else None, nrows=rows, engine='openpyxl')
+        if not has_header:
+            df.columns = [f"col_{i}" for i in range(len(df.columns))]
+        return df
+    except:
+        return pd.DataFrame()
+
+def get_excel_columns(file_bytes: bytes, sheet_name: str, has_header: bool = True) -> List[str]:
+    # Use preview to get cols
+    df = get_excel_preview(file_bytes, sheet_name, has_header, rows=1)
+    if not df.empty:
+        return list(df.columns)
+    return []
 
 def excel_estimate_rows(file_bytes: bytes, sheet_name: str, has_header: bool = True) -> int:
     if openpyxl is None: return 0
@@ -244,6 +321,8 @@ def iter_excel_selected_columns(file_bytes: bytes, sheet_name: str, has_header: 
     rows_iter = ws.iter_rows(values_only=True)
     first = next(rows_iter, None)
     if first is None: wb.close(); return
+    
+    # Map Columns
     if has_header:
         header = make_unique_header(list(first))
         name_to_idx = {n: i for i, n in enumerate(header)}
@@ -252,43 +331,20 @@ def iter_excel_selected_columns(file_bytes: bytes, sheet_name: str, has_header: 
         header = [f"col_{i}" for i in range(len(first))]
         name_to_idx = {n: i for i, n in enumerate(header)}
         idxs = [name_to_idx[n] for n in selected_columns if n in name_to_idx]
+        
+        # Yield first row as data
         vals = [first[i] if i < len(first) else "" for i in idxs]
         if drop_empty: vals = [v for v in vals if v]
         yield join_with.join("" if v is None else str(v) for v in vals)
+
     for row in rows_iter:
         vals = [row[i] if (row is not None and i < len(row)) else "" for i in idxs]
         if drop_empty: vals = [v for v in vals if v]
         yield join_with.join("" if v is None else str(v) for v in vals)
     wb.close()
 
-def read_rows_csv_pandas(file_bytes: bytes, encoding_choice: str = "auto", chunksize: int = 10_000, header: bool = False, usecols: Optional[List[int]] = None, join_with: str = " ") -> Iterable[str]:
-    def _reader(enc: str):
-        buf = io.BytesIO(file_bytes)
-        pd_header = 0 if header else None
-        return pd.read_csv(buf, header=pd_header, dtype=str, usecols=usecols, chunksize=chunksize, encoding=enc, engine="python", on_bad_lines="skip", memory_map=False)
-    enc = "latin-1" if encoding_choice == "latin-1" else "utf-8"
-    try:
-        reader = _reader(enc)
-        for chunk in reader:
-            if isinstance(chunk, pd.DataFrame):
-                if chunk.empty: continue
-                chunk = chunk.fillna("")
-                arr = chunk.to_numpy(dtype=str, copy=False)
-                for row in arr: yield join_with.join([v for v in row if v])
-    except Exception:
-        try:
-            reader = _reader("latin-1")
-            for chunk in reader:
-                if isinstance(chunk, pd.DataFrame):
-                    if chunk.empty: continue
-                    chunk = chunk.fillna("")
-                    arr = chunk.to_numpy(dtype=str, copy=False)
-                    for row in arr: yield join_with.join([v for v in row if v])
-        except Exception:
-            for line in read_rows_raw_lines(file_bytes, encoding_choice="latin-1"): yield line
-
 # ---------------------------
-# core processing
+# CORE PROCESSING
 # ---------------------------
 
 def is_url_token(tok: str) -> bool:
@@ -362,7 +418,7 @@ def calculate_text_stats(counts: Counter, total_rows: int) -> Dict:
     }
 
 # ---------------------------
-# sentiment analysis logic
+# SENTIMENT & VIZ
 # ---------------------------
 
 @st.cache_data(show_spinner="Analyzing term sentiment...")
@@ -383,10 +439,6 @@ def get_sentiment_category(score: float, pos_threshold: float, neg_threshold: fl
     if score <= neg_threshold: return "Negative"
     return "Neutral"
 
-# ---------------------------
-# visualization
-# ---------------------------
-
 def build_wordcloud_figure_from_counts(counts: Counter, max_words: int, width: int, height: int, bg_color: str, colormap: str, font_path: Optional[str], random_state: int, color_func: Optional[Callable] = None):
     limited = dict(counts.most_common(max_words))
     wc = WordCloud(width=width, height=height, background_color=bg_color, colormap=colormap, font_path=font_path, random_state=random_state, color_func=color_func, collocations=False, normalize_plurals=False).generate_from_frequencies(limited)
@@ -404,7 +456,7 @@ def fig_to_png_bytes(fig: plt.Figure) -> BytesIO:
     return buf
 
 # ---------------------------
-# AI GENERATION LOGIC
+# AI LOGIC
 # ---------------------------
 def generate_ai_insights(counts: Counter, bigrams: Counter, config: dict):
     try:
@@ -432,7 +484,6 @@ def generate_ai_insights(counts: Counter, bigrams: Counter, config: dict):
         )
         
         content = response.choices[0].message.content
-        # Track Usage
         if hasattr(response, 'usage') and response.usage:
             in_tok = response.usage.prompt_tokens
             out_tok = response.usage.completion_tokens
@@ -445,7 +496,7 @@ def generate_ai_insights(counts: Counter, bigrams: Counter, config: dict):
         return f"AI Error: {str(e)}"
 
 # ---------------------------
-# streamlit app
+# MAIN APP
 # ---------------------------
 
 st.set_page_config(page_title="Word Cloud & Graph Analytics", layout="wide")
@@ -522,8 +573,8 @@ with st.sidebar:
     st.divider()
     st.info("Performance Tip: Streaming allows files up to ~1GB (but no need to push it)")
     uploaded_files = st.file_uploader(
-        "upload files (csv, xlsx, vtt)",
-        type=["csv", "xlsx", "xlsm", "vtt"],
+        "upload files (csv, xlsx, json, txt, vtt, pdf)",
+        type=["csv", "xlsx", "xlsm", "vtt", "txt", "json", "pdf"],
         accept_multiple_files=True
     )
 
@@ -579,7 +630,7 @@ with st.sidebar:
         compute_bigrams = st.checkbox("compute bigrams / graph", value=True, help="Required for Network Graph features")
 
 # ---------------------------
-# main processing loop
+# MAIN PROCESSING LOOP
 # ---------------------------
 combined_counts, combined_bigrams, file_results = Counter(), Counter(), []
 if uploaded_files:
@@ -590,15 +641,26 @@ if uploaded_files:
 
     for idx, file in enumerate(uploaded_files):
         file_bytes, fname, lower = file.getvalue(), file.name, file.name.lower()
-        is_csv, is_xlsx, is_vtt = lower.endswith(".csv"), lower.endswith((".xlsx", ".xlsm")), lower.endswith(".vtt")
+        
+        # File type detection
+        is_csv = lower.endswith(".csv")
+        is_xlsx = lower.endswith((".xlsx", ".xlsm"))
+        is_vtt = lower.endswith(".vtt")
+        is_txt = lower.endswith(".txt")
+        is_json = lower.endswith(".json")
+        is_pdf = lower.endswith(".pdf")
 
         if font_names:
             per_file_font_choice = st.sidebar.selectbox(f"font for {fname}", [use_combined_option] + font_names, 0, key=f"font_{idx}")
             per_file_font_path = combined_font_path if per_file_font_choice == use_combined_option else font_map.get(per_file_font_choice)
         else: per_file_font_choice, per_file_font_path = "(default)", None
         
-        with st.expander(f"🧩 input options: {fname}", expanded=False):
+        # --- INPUT OPTIONS WITH DATA PREVIEW ---
+        with st.expander(f"🧩 Input Options: {fname}", expanded=False):
             if is_vtt: st.info("VTT transcript detected.")
+            elif is_pdf: st.info("PDF document detected. Processing page by page.")
+            elif is_txt: st.info("Plain Text file detected.")
+            
             elif is_csv:
                 try: inferred_cols = detect_csv_num_cols(file_bytes, encoding_choice, delimiter=",")
                 except Exception: inferred_cols = 1
@@ -608,28 +670,62 @@ if uploaded_files:
                 delimiter = {",": ",", "tab": "\t", ";": ";", "|": "|"}[delim_choice]
                 has_header = st.checkbox("header row", value=True if inferred_cols > 1 else False, key=f"csv_header_{idx}")
                 selected_cols, join_with = [], " "
+                
                 if read_mode == "csv columns":
-                    try: col_names = get_csv_columns(file_bytes, encoding_choice, delimiter, has_header)
-                    except Exception: col_names = []
-                    selected_cols = st.multiselect("columns", col_names, [col_names[0]] if col_names else [], key=f"csv_cols_{idx}")
-                    join_with = st.text_input("join with", " ", key=f"csv_join_{idx}")
+                    # PREVIEW LOGIC
+                    st.caption("🔍 Data Preview (First 5 Rows)")
+                    df_prev = get_csv_preview(file_bytes, encoding_choice, delimiter, has_header)
+                    st.dataframe(df_prev, use_container_width=True, height=150)
+                    
+                    if not df_prev.empty:
+                        col_names = list(df_prev.columns)
+                        selected_cols = st.multiselect("Select Text Columns", col_names, [col_names[0]], key=f"csv_cols_{idx}")
+                        join_with = st.text_input("join with", " ", key=f"csv_join_{idx}")
+
             elif is_xlsx:
                 if openpyxl:
                     sheets = get_excel_sheetnames(file_bytes)
                     sheet_name = st.selectbox("sheet", sheets or ["(none)"], 0, key=f"xlsx_sheet_{idx}")
                     has_header = st.checkbox("header row", True, key=f"xlsx_header_{idx}")
-                    col_names = get_excel_columns(file_bytes, sheet_name, has_header) if sheets else []
-                    selected_cols = st.multiselect("columns", col_names, [col_names[0]] if col_names else [], key=f"xlsx_cols_{idx}")
-                    join_with = st.text_input("join with", " ", key=f"xlsx_join_{idx}")
-        
+                    
+                    # PREVIEW LOGIC
+                    if sheet_name:
+                        st.caption("🔍 Data Preview (First 5 Rows)")
+                        df_prev = get_excel_preview(file_bytes, sheet_name, has_header)
+                        st.dataframe(df_prev, use_container_width=True, height=150)
+                        
+                        if not df_prev.empty:
+                            col_names = list(df_prev.columns)
+                            selected_cols = st.multiselect("Select Text Columns", col_names, [col_names[0]], key=f"xlsx_cols_{idx}")
+                            join_with = st.text_input("join with", " ", key=f"xlsx_join_{idx}")
+
+            elif is_json:
+                st.info("JSON/JSONL File. Reads as line-delimited or standard array.")
+                json_key = st.text_input("Key to Extract (leave empty to read all text)", "", key=f"json_key_{idx}", help="If your JSON has objects like {'text': 'hello'}, enter 'text' here.")
+
+        # --- PROCESSING CONTAINER ---
         container = st.container()
         with container:
             st.markdown(f"#### {fname}")
             per_file_bar, per_file_status = st.progress(0), st.empty()
         
         rows_iter, approx_rows = iter([]), 0
+        
+        # Setup Iterator based on type
         if is_vtt:
             rows_iter = read_rows_vtt(file_bytes, "latin-1" if encoding_choice == "latin-1" else "auto")
+            approx_rows = estimate_row_count_from_bytes(file_bytes)
+        elif is_pdf:
+             rows_iter = read_rows_pdf(file_bytes)
+             # Approx pages? Hard to know without parsing. Just dummy it or use len(reader.pages) if fast
+             approx_rows = 0 
+        elif is_txt:
+            rows_iter = read_rows_raw_lines(file_bytes, "latin-1" if encoding_choice == "latin-1" else "auto")
+            approx_rows = estimate_row_count_from_bytes(file_bytes)
+        elif is_json:
+            key_sel = locals().get('json_key', None)
+            key_sel = key_sel if key_sel and key_sel.strip() else None
+            rows_iter = read_rows_json(file_bytes, key_sel)
             approx_rows = estimate_row_count_from_bytes(file_bytes)
         elif is_csv:
             rmode = locals().get('read_mode', "raw lines")
@@ -646,6 +742,7 @@ if uploaded_files:
             rows_iter = read_rows_raw_lines(file_bytes, "latin-1" if encoding_choice == "latin-1" else "auto")
             approx_rows = estimate_row_count_from_bytes(file_bytes)
         
+        # Update freq logic
         update_every = 500 if approx_rows <= 50000 else (2000 if approx_rows <= 500000 else 10000)
         start_wall = time.perf_counter()
         
@@ -665,7 +762,6 @@ if uploaded_files:
             add_preps, drop_integers, min_word_len, compute_bigrams, make_progress_cb(approx_rows), update_every
         )
         
-        # Save minimal data for stats later
         file_results.append({"rows": data["rows"]})
 
         per_file_bar.progress(100)
@@ -687,7 +783,7 @@ if uploaded_files:
         overall_bar.progress(int(((idx + 1) / total_files) * 100))
 
 # ---------------------------
-# combined results
+# RESULTS & ANALYTICS
 # ---------------------------
 term_sentiments = {}
 if enable_sentiment and combined_counts:
@@ -709,17 +805,15 @@ if combined_counts:
     except MemoryError: st.error("memory error: reduce image size.")
 
 # ---------------------------
-# COMBINED ANALYTICS SECTION (Graph + Stats)
+# COMBINED ANALYTICS SECTION
 # ---------------------------
 
 if combined_counts:
     st.divider()
     
-    # Calculate Text Stats (We calculate them here to use inside the tabs later)
     total_processed_rows = sum(f['rows'] for f in file_results)
     text_stats = calculate_text_stats(combined_counts, total_processed_rows)
 
-    # Only show Tabs if we have graph data enabled; otherwise just show Text Stats
     show_graph = compute_bigrams and combined_bigrams and st.checkbox("🕸️ Show Network Graph & Advanced Analytics", value=True)
     
     if show_graph:
@@ -746,19 +840,13 @@ if combined_counts:
 
             # 3. VISUALIZATION
             nodes, edges = [], []
-            
-            # Pre-calculate centrality for sizing
             try:
-                # We use degree centrality for node sizing
                 deg_centrality = nx.degree_centrality(G)
             except:
                 deg_centrality = {n: 1 for n in G.nodes()}
 
             for node_id in G.nodes():
-                # Dynamic sizing based on centrality
                 size = 15 + (deg_centrality.get(node_id, 0) * 60)
-                
-                # Dynamic coloring based on sentiment
                 node_color = neu_color
                 if enable_sentiment:
                     score = term_sentiments.get(node_id, 0)
@@ -766,103 +854,54 @@ if combined_counts:
                     elif score <= neg_threshold: node_color = neg_color
                 
                 nodes.append(Node(
-                    id=node_id,
-                    label=node_id,
-                    size=size,
-                    color=node_color,
+                    id=node_id, label=node_id, size=size, color=node_color,
                     title=f"Freq: {combined_counts.get(node_id, 0)}"
                 ))
 
             for (source, target), weight in sorted_connections:
-                edges.append(Edge(
-                    source=source,
-                    target=target,
-                    width=max(1, weight * 0.15), # Thicker lines for heavier weights
-                    color="#cccccc"
-                ))
+                edges.append(Edge(source=source, target=target, width=max(1, weight * 0.15), color="#cccccc"))
 
             config = Config(width=900, height=600, directed=directed_graph, physics=physics_enabled, hierarchy=False)
-            
-            # Render the graph
-            return_val = agraph(nodes=nodes, edges=edges, config=config)
+            agraph(nodes=nodes, edges=edges, config=config)
 
-            # 4. TABBED ANALYTICS (Replicating the target app)
+            # 4. TABBED ANALYTICS
             st.markdown("### 📊 Graph Analytics")
             tab1, tab2, tab3, tab4, tab5 = st.tabs(["Basic Stats", "Degree Stats", "Centrality Measures", "Top Nodes", "Text Stats"])
             
-            # --- TAB 1: BASIC STATS ---
             with tab1:
                 col_b1, col_b2, col_b3 = st.columns(3)
                 col_b1.metric("Nodes", G.number_of_nodes())
                 col_b2.metric("Edges (Connections)", G.number_of_edges())
-                try:
-                    density = nx.density(G)
-                    col_b3.metric("Graph Density", f"{density:.4f}", help="0 = no connections, 1 = everyone connected to everyone.")
+                try: col_b3.metric("Graph Density", f"{nx.density(G):.4f}")
                 except: pass
 
-            # --- TAB 2: DEGREE STATS ---
             with tab2:
-                # Degree = number of connections a node has
                 degrees = [val for (node, val) in G.degree()]
                 avg_degree = sum(degrees) / float(len(degrees)) if degrees else 0
                 st.metric("Average Degree", f"{avg_degree:.2f}")
-                
-                # Histogram data
                 degree_counts = pd.DataFrame(degrees, columns=["Connections"])
                 st.bar_chart(degree_counts["Connections"].value_counts().sort_index(), use_container_width=True)
-                st.caption("Distribution of Node Connections (X=Number of Connections, Y=Count of Nodes)")
 
-            # --- TAB 3: CENTRALITY MEASURES (The complex math from Screenshot 2) ---
             with tab3:
                 try:
-                    # Calculate different types of importance
                     dc = nx.degree_centrality(G)
                     bc = nx.betweenness_centrality(G, weight='weight')
                     cc = nx.closeness_centrality(G)
                     pr = nx.pagerank(G, weight='weight')
-                    
-                    # Combine into one DataFrame
-                    centrality_data = []
-                    for node in G.nodes():
-                        centrality_data.append({
-                            "Node": node,
-                            "Degree Centrality": dc.get(node, 0),
-                            "Betweenness": bc.get(node, 0),
-                            "Closeness": cc.get(node, 0),
-                            "PageRank": pr.get(node, 0)
-                        })
-                    
+                    centrality_data = [{"Node": n, "Degree Centrality": dc.get(n,0), "Betweenness": bc.get(n,0), "Closeness": cc.get(n,0), "PageRank": pr.get(n,0)} for n in G.nodes()]
                     df_cent = pd.DataFrame(centrality_data).set_index("Node")
-                    
-                    # Formatting to match the screenshot style
-                    st.dataframe(
-                        df_cent.sort_values("PageRank", ascending=False).head(50).style.background_gradient(cmap="Blues"), 
-                        use_container_width=True,
-                        height=400
-                    )
-                    st.info("""
-                    **Legend:**
-                    *   **Degree:** Simply has many connections.
-                    *   **Betweenness:** Acts as a bridge connecting different clusters.
-                    *   **Closeness:** Can reach other nodes quickly.
-                    *   **PageRank:** Connected to other important nodes (Google's algorithm).
-                    """)
+                    st.dataframe(df_cent.sort_values("PageRank", ascending=False).head(50).style.background_gradient(cmap="Blues"), use_container_width=True, height=400)
                 except Exception as e:
                     st.error(f"Could not calculate advanced centrality: {e}")
 
-            # --- TAB 4: TOP NODES ---
             with tab4:
-                # Top nodes by internal weight (frequency in the graph)
                 node_weights = {n: 0 for n in G.nodes()}
                 for u, v, data in G.edges(data=True):
                     w = data.get('weight', 1)
                     node_weights[u] += w
                     node_weights[v] += w
-                
-                top_nodes_df = pd.DataFrame(list(node_weights.items()), columns=["Node", "Weighted Degree"])
-                st.dataframe(top_nodes_df.sort_values("Weighted Degree", ascending=False).head(50), use_container_width=True)
+                st.dataframe(pd.DataFrame(list(node_weights.items()), columns=["Node", "Weighted Degree"]).sort_values("Weighted Degree", ascending=False).head(50), use_container_width=True)
 
-            # --- TAB 5: TEXT STATS (Moved here to match target app) ---
             with tab5:
                 col_s1, col_s2, col_s3, col_s4 = st.columns(4)
                 col_s1.metric("Total Tokens", f"{text_stats['Total Tokens']:,}")
@@ -871,7 +910,6 @@ if combined_counts:
                 col_s4.metric("Avg Word Len", f"{text_stats['Avg Word Length']}")
                 
     else:
-        # Fallback if Graph is unchecked: Just show the Text Stats panel
         st.subheader("📈 Text Statistics")
         col_s1, col_s2, col_s3, col_s4 = st.columns(4)
         col_s1.metric("Total Tokens", f"{text_stats['Total Tokens']:,}")
@@ -901,16 +939,6 @@ if st.session_state['ai_response']:
 
 # --- TABLES ---
 if combined_counts:
-    with st.expander("📖 App Guide & Usage Examples", expanded=False):
-        st.markdown("""
-        ### 🚀 Quick Start
-        1.  **Upload Data:** Drag and drop CSV, Excel, or VTT files in the sidebar.
-        2.  **Configure Input:** If using Excel/CSV, open the **"🧩 Input Options"** expander for that file to select which column contains the text (e.g., "Comments", "Transcript").
-        3.  **Visualize:** The Word Cloud updates automatically.
-        4.  **Network Graph:** Check "Show Network Graph" to see how words link together. Use the Tabs below the graph to see **Centrality** and **Stats**.
-        5.  **Analyze:** Log in via the sidebar to unlock the **"✨ Analyze Themes"** button for AI-powered insights.
-        """)
-
     st.divider()
     st.subheader(f"📊 Frequency Tables (Top {top_n})")
     most_common = combined_counts.most_common(top_n)
