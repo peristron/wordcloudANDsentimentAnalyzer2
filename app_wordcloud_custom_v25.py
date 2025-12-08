@@ -1,4 +1,4 @@
-#  OPTIMIZED FOR DEPLOYMENT + LARGE FILES + GRAPH PHYSICS + AI
+#  OPTIMIZED FOR DEPLOYMENT + LARGE FILES + GRAPH CLUSTERING + AI
 #
 import io
 import re
@@ -7,7 +7,7 @@ import gc
 import time
 import csv
 import json
-import math  # Required for log scaling in graph
+import math
 import string
 from collections import Counter
 from typing import Dict, List, Tuple, Iterable, Optional, Callable
@@ -23,6 +23,7 @@ import openai
 
 # --- GRAPH IMPORTS ---
 import networkx as nx
+import networkx.algorithms.community as nx_comm
 from streamlit_agraph import agraph, Node, Edge, Config
 
 # --- OPTIONAL IMPORTS (Handle missing libraries gracefully) ---
@@ -151,7 +152,7 @@ def make_unique_header(raw_names: List[Optional[str]]) -> List[str]:
     return result
 
 # ---------------------------
-# ROW READERS (Enhanced for Multi-Format)
+# ROW READERS
 # ---------------------------
 
 def read_rows_raw_lines(file_bytes: bytes, encoding_choice: str = "auto") -> Iterable[str]:
@@ -797,9 +798,6 @@ if combined_counts:
     show_graph = compute_bigrams and combined_bigrams and st.checkbox("🕸️ Show Network Graph & Advanced Analytics", value=True)
     
     if show_graph:
-        import math
-        import networkx.algorithms.community as nx_comm # For clustering
-        
         st.subheader("🔗 Network Graph & Analytics")
         
         # 1. GRAPH CONFIGURATION & PHYSICS
@@ -813,10 +811,7 @@ if combined_counts:
             edge_len_val = c2.slider("Edge Length", 50, 500, 250, help="Target length of lines.")
             
             physics_enabled = c3.checkbox("Enable Physics", True)
-            # Default to Undirected for cleaner clustering views
             directed_graph = c3.checkbox("Directed Arrows", False, help="Show direction of flow.")
-            
-            # Color Mode Selection
             color_mode = c3.radio("Color By:", ["Community (Topic)", "Sentiment"], index=0)
 
         # 2. BUILD GRAPH
@@ -836,29 +831,24 @@ if combined_counts:
             except:
                 deg_centrality = {n: 1 for n in G.nodes()}
 
-            # --- COMMUNITY DETECTION (The "Meaning" Maker) ---
-            # This groups distinct topics into colors
+            # --- COMMUNITY DETECTION ---
             community_map = {}
             if color_mode == "Community (Topic)":
-                # Convert to undirected for community detection if needed
                 G_undir = G.to_undirected() if directed_graph else G
                 try:
                     communities = nx_comm.greedy_modularity_communities(G_undir)
-                    # Create a map of Node -> GroupID
                     for group_id, community in enumerate(communities):
                         for node in community:
                             community_map[node] = group_id
                 except Exception as e:
                     st.warning(f"Could not calculate communities: {e}")
 
-            # Define a color palette for communities
             community_colors = ["#FF4B4B", "#4589ff", "#ffa421", "#3cdb82", "#8b46ff", "#ff4b9f", "#00c0f2"]
 
             # 4. CREATE NODES
             nodes, edges = [], []
             for node_id in G.nodes():
-                # Dramatic sizing: Make the big nodes really pop
-                # Base size 15, max add 80 based on centrality
+                # Dynamic sizing
                 size = 15 + (deg_centrality.get(node_id, 0) * 80)
                 
                 # COLOR LOGIC
@@ -869,9 +859,7 @@ if combined_counts:
                         if score >= pos_threshold: node_color = pos_color
                         elif score <= neg_threshold: node_color = neg_color
                 else:
-                    # Community Coloring
                     group_id = community_map.get(node_id, 0)
-                    # Cycle through palette
                     node_color = community_colors[group_id % len(community_colors)]
 
                 nodes.append(Node(
@@ -879,7 +867,6 @@ if combined_counts:
                     label=node_id, 
                     size=size, 
                     color=node_color,
-                    # Tooltip info
                     title=f"Term: {node_id}\nFreq: {combined_counts.get(node_id, 0)}\nCentrality: {deg_centrality.get(node_id, 0):.2f}",
                     font={'color': 'black' if bg_color == '#ffffff' else 'white', 'size': 14}
                 ))
@@ -894,14 +881,13 @@ if combined_counts:
                     color="#cccccc" if bg_color == '#ffffff' else "#555555"
                 ))
 
-            # 6. VISUALIZATION CONFIG (Now with Zoom Buttons!)
+            # 6. VISUALIZATION CONFIG
             config = Config(
                 width=1000, 
                 height=700, 
                 directed=directed_graph, 
                 physics=physics_enabled, 
                 hierarchy=False,
-                # Enable Zoom/Pan Buttons
                 interaction={"navigationButtons": True, "zoomView": True}, 
                 physicsSettings={
                     "solver": "forceAtlas2Based",
@@ -964,6 +950,14 @@ if combined_counts:
                 col_s2.metric("Unique Vocab", f"{text_stats['Unique Vocabulary']:,}")
                 col_s3.metric("Lexical Diversity", f"{text_stats['Lexical Diversity']}")
                 col_s4.metric("Avg Word Len", f"{text_stats['Avg Word Length']}")
+                
+    else:
+        st.subheader("📈 Text Statistics")
+        col_s1, col_s2, col_s3, col_s4 = st.columns(4)
+        col_s1.metric("Total Tokens", f"{text_stats['Total Tokens']:,}")
+        col_s2.metric("Unique Vocab", f"{text_stats['Unique Vocabulary']:,}")
+        col_s3.metric("Lexical Diversity", f"{text_stats['Lexical Diversity']}")
+        col_s4.metric("Avg Word Len", f"{text_stats['Avg Word Length']}")
 
 else: 
     st.info("upload files to start.")
