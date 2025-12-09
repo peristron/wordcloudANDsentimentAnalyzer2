@@ -10,3 +10,5 @@ nltk>=3.8.0
 pypdf>=3.0.0
 scipy>=1.10.0
 python-pptx
+requests
+beautifulsoup4
