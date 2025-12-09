@@ -1,4 +1,4 @@
-#  optimizing for public deployment + large files + graph analysis + the 'ai'
+#  optimizing for public deployment + large files + graph analysis + the 'ai' - NEW, pptx support
 #
 import io
 import re
@@ -36,6 +36,12 @@ try:
     import pypdf
 except ImportError:
     pypdf = None
+
+# --- NEW: PPTX Support
+try:
+    import pptx
+except ImportError:
+    pptx = None
 
 try:
     import nltk
@@ -183,6 +189,20 @@ def read_rows_pdf(file_bytes: bytes) -> Iterable[str]:
             text = page.extract_text()
             if text:
                 yield text
+    except Exception:
+        yield ""
+
+# --- NEW: PPTX Reader Function
+def read_rows_pptx(file_bytes: bytes) -> Iterable[str]:
+    if pptx is None: return
+    bio = io.BytesIO(file_bytes)
+    try:
+        prs = pptx.Presentation(bio)
+        for slide in prs.slides:
+            for shape in slide.shapes:
+                if hasattr(shape, "has_text_frame") and shape.has_text_frame:
+                    if shape.text:
+                        yield shape.text
     except Exception:
         yield ""
 
@@ -579,8 +599,8 @@ with st.sidebar:
     st.divider()
     st.info("Performance Tip: Streaming allows files up to ~1GB (but no need to push it)")
     uploaded_files = st.file_uploader(
-        "upload files (csv, xlsx, json, txt, vtt, pdf)",
-        type=["csv", "xlsx", "xlsm", "vtt", "txt", "json", "pdf"],
+        "upload files (csv, xlsx, json, txt, vtt, pdf, pptx)",
+        type=["csv", "xlsx", "xlsm", "vtt", "txt", "json", "pdf", "pptx"],
         accept_multiple_files=True
     )
 
@@ -654,6 +674,8 @@ if uploaded_files:
         is_txt = lower.endswith(".txt")
         is_json = lower.endswith(".json")
         is_pdf = lower.endswith(".pdf")
+        # --- NEW: PPTX Detection
+        is_pptx = lower.endswith(".pptx")
 
         if font_names:
             per_file_font_choice = st.sidebar.selectbox(f"font for {fname}", [use_combined_option] + font_names, 0, key=f"font_{idx}")
@@ -664,6 +686,8 @@ if uploaded_files:
         with st.expander(f"🧩 Input Options: {fname}", expanded=False):
             if is_vtt: st.info("VTT transcript detected.")
             elif is_pdf: st.info("PDF document detected. Processing page by page.")
+            # --- NEW: PPTX Info
+            elif is_pptx: st.info("PowerPoint presentation detected. Extracting text from slides.")
             elif is_txt: st.info("Plain Text file detected.")
             
             elif is_csv:
@@ -719,7 +743,11 @@ if uploaded_files:
             approx_rows = estimate_row_count_from_bytes(file_bytes)
         elif is_pdf:
              rows_iter = read_rows_pdf(file_bytes)
-             approx_rows = 0 
+             approx_rows = 0
+        # --- NEW: PPTX Processing
+        elif is_pptx:
+             rows_iter = read_rows_pptx(file_bytes)
+             approx_rows = 0
         elif is_txt:
             rows_iter = read_rows_raw_lines(file_bytes, "latin-1" if encoding_choice == "latin-1" else "auto")
             approx_rows = estimate_row_count_from_bytes(file_bytes)
