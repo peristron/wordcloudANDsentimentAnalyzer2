@@ -639,7 +639,7 @@ with st.sidebar:
     
     # --- NEW: URL Input ---
     st.markdown("### 🌐 Web & Files")
-    url_input = st.text_area("enter urls (one per line)", height=100, help="The app will scrape the visible text from these pages.")
+    url_input = st.text_area("enter urls (1 per line - publicly accessible addresses only)", height=100, help="The app will scrape the visible text from these pages.")
     
     st.info("Performance Tip: Streaming allows files up to ~1GB (but no need to push it)")
     uploaded_files = st.file_uploader(
