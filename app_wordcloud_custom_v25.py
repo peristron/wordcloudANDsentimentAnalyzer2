@@ -1,4 +1,4 @@
-#  optimizing for public deployment + large files + graph analysis + the 'ai' - NEW, pptx support
+#  optimizing for public deployment + large files + graph analysis + the 'ai', including pptx AND url/scrape support
 #
 import io
 import re
@@ -26,6 +26,14 @@ import networkx as nx
 import networkx.algorithms.community as nx_comm
 from streamlit_agraph import agraph, Node, Edge, Config
 
+# --- NEW: Web Scraping Imports
+try:
+    import requests
+    from bs4 import BeautifulSoup
+except ImportError:
+    requests = None
+    BeautifulSoup = None
+
 # --- optional imports, to handle any missing libraries gracefully
 try:
     import openpyxl
@@ -37,7 +45,7 @@ try:
 except ImportError:
     pypdf = None
 
-# --- NEW: PPTX Support
+# --- PPTX Support
 try:
     import pptx
 except ImportError:
@@ -115,6 +123,8 @@ def build_punct_translation(keep_hyphens: bool, keep_apostrophes: bool) -> dict:
     return str.maketrans("", "", punct)
 
 def parse_user_stopwords(raw: str) -> Tuple[List[str], List[str]]:
+    # Replace newlines and periods with commas to be more forgiving of user input
+    raw = raw.replace("\n", ",").replace(".", ",")
     phrases, singles = [], []
     for item in [x.strip() for x in raw.split(",") if x.strip()]:
         if " " in item: phrases.append(item.lower())
@@ -157,6 +167,35 @@ def make_unique_header(raw_names: List[Optional[str]]) -> List[str]:
         result.append(unique)
     return result
 
+# --- NEW: Web Scraping Helper
+class VirtualFile:
+    """Helper to make a URL string look like a file upload for the existing logic"""
+    def __init__(self, name: str, text_content: str):
+        self.name = name
+        self._bytes = text_content.encode('utf-8')
+
+    def getvalue(self) -> bytes:
+        return self._bytes
+
+def fetch_url_content(url: str) -> Optional[str]:
+    if not requests or not BeautifulSoup: return None
+    try:
+        # User agent to avoid 403s
+        headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'}
+        response = requests.get(url, headers=headers, timeout=10)
+        response.raise_for_status()
+        
+        soup = BeautifulSoup(response.content, 'html.parser')
+        # kill all script and style elements
+        for script in soup(["script", "style", "nav", "footer"]):
+            script.decompose()
+            
+        text = soup.get_text(separator=' ', strip=True)
+        return text
+    except Exception as e:
+        st.toast(f"Error fetching {url}: {str(e)}", icon="⚠️")
+        return None
+
 # 
 # row readersROW READERS
 # 
@@ -192,7 +231,7 @@ def read_rows_pdf(file_bytes: bytes) -> Iterable[str]:
     except Exception:
         yield ""
 
-# --- NEW: PPTX Reader Function
+# --- PPTX Reader Function
 def read_rows_pptx(file_bytes: bytes) -> Iterable[str]:
     if pptx is None: return
     bio = io.BytesIO(file_bytes)
@@ -597,6 +636,11 @@ with st.sidebar:
             if st.session_state['auth_error']: st.error("Incorrect password.")
 
     st.divider()
+    
+    # --- NEW: URL Input ---
+    st.markdown("### 🌐 Web & Files")
+    url_input = st.text_area("enter urls (one per line)", height=100, help="The app will scrape the visible text from these pages.")
+    
     st.info("Performance Tip: Streaming allows files up to ~1GB (but no need to push it)")
     uploaded_files = st.file_uploader(
         "upload files (csv, xlsx, json, txt, vtt, pdf, pptx)",
@@ -659,13 +703,31 @@ with st.sidebar:
 # main processing loop
 # --------------------------
 combined_counts, combined_bigrams, file_results = Counter(), Counter(), []
-if uploaded_files:
-    st.subheader("📄 Per-File Processing")
+
+# --- NEW: Process URLs into Virtual Files ---
+all_inputs = list(uploaded_files) if uploaded_files else []
+
+if url_input:
+    urls_to_scrape = [u.strip() for u in url_input.split('\n') if u.strip()]
+    if urls_to_scrape:
+        with st.status(f"Scraping {len(urls_to_scrape)} URLs...", expanded=True) as status:
+            for i, url in enumerate(urls_to_scrape):
+                st.write(f"Fetching: {url}")
+                scraped_text = fetch_url_content(url)
+                if scraped_text:
+                    # Create a friendly filename from the URL
+                    safe_name = re.sub(r'[^a-zA-Z0-9]', '_', url.split('//')[-1])[:50] + ".txt"
+                    # Add to the input list as if it were a file
+                    all_inputs.append(VirtualFile(safe_name, scraped_text))
+            status.update(label="Scraping Complete", state="complete", expanded=False)
+
+if all_inputs:
+    st.subheader("📄 Per-File / URL Processing")
     overall_bar, overall_status = st.progress(0), st.empty()
     use_combined_option = "use combined font"
-    total_files = len(uploaded_files)
+    total_files = len(all_inputs)
 
-    for idx, file in enumerate(uploaded_files):
+    for idx, file in enumerate(all_inputs):
         file_bytes, fname, lower = file.getvalue(), file.name, file.name.lower()
         
         is_csv = lower.endswith(".csv")
@@ -674,7 +736,6 @@ if uploaded_files:
         is_txt = lower.endswith(".txt")
         is_json = lower.endswith(".json")
         is_pdf = lower.endswith(".pdf")
-        # --- NEW: PPTX Detection
         is_pptx = lower.endswith(".pptx")
 
         if font_names:
@@ -686,9 +747,8 @@ if uploaded_files:
         with st.expander(f"🧩 Input Options: {fname}", expanded=False):
             if is_vtt: st.info("VTT transcript detected.")
             elif is_pdf: st.info("PDF document detected. Processing page by page.")
-            # --- NEW: PPTX Info
             elif is_pptx: st.info("PowerPoint presentation detected. Extracting text from slides.")
-            elif is_txt: st.info("Plain Text file detected.")
+            elif is_txt: st.info("Plain Text (or URL content) detected.")
             
             elif is_csv:
                 try: inferred_cols = detect_csv_num_cols(file_bytes, encoding_choice, delimiter=",")
@@ -744,7 +804,6 @@ if uploaded_files:
         elif is_pdf:
              rows_iter = read_rows_pdf(file_bytes)
              approx_rows = 0
-        # --- NEW: PPTX Processing
         elif is_pptx:
              rows_iter = read_rows_pptx(file_bytes)
              approx_rows = 0
@@ -1033,18 +1092,18 @@ if combined_counts:
 
             with tab5:
                 col_s1, col_s2, col_s3, col_s4 = st.columns(4)
-                col_s1.metric("Total Tokens", f"{text_stats['Total Tokens']:,}")
-                col_s2.metric("Unique Vocab", f"{text_stats['Unique Vocabulary']:,}")
-                col_s3.metric("Lexical Diversity", f"{text_stats['Lexical Diversity']}")
-                col_s4.metric("Avg Word Len", f"{text_stats['Avg Word Length']}")
+                col_s1.metric("Total Tokens", f"{text_stats['Total Tokens']:,}", help="Total count of words kept after cleaning (removing stopwords, punctuation, etc).")
+                col_s2.metric("Unique Vocab", f"{text_stats['Unique Vocabulary']:,}", help="The number of distinct, unique words identified in the text.")
+                col_s3.metric("Lexical Diversity", f"{text_stats['Lexical Diversity']}", help="Ratio of Unique Words to Total Tokens. Higher = richer vocabulary. Lower = repetitive text.")
+                col_s4.metric("Avg Word Len", f"{text_stats['Avg Word Length']}", help="Average number of characters per word.")
                 
     else:
         st.subheader("📈 Text Statistics")
         col_s1, col_s2, col_s3, col_s4 = st.columns(4)
-        col_s1.metric("Total Tokens", f"{text_stats['Total Tokens']:,}")
-        col_s2.metric("Unique Vocab", f"{text_stats['Unique Vocabulary']:,}")
-        col_s3.metric("Lexical Diversity", f"{text_stats['Lexical Diversity']}")
-        col_s4.metric("Avg Word Len", f"{text_stats['Avg Word Length']}")
+        col_s1.metric("Total Tokens", f"{text_stats['Total Tokens']:,}", help="Total count of words kept after cleaning (removing stopwords, punctuation, etc).")
+        col_s2.metric("Unique Vocab", f"{text_stats['Unique Vocabulary']:,}", help="The number of distinct, unique words identified in the text.")
+        col_s3.metric("Lexical Diversity", f"{text_stats['Lexical Diversity']}", help="Ratio of Unique Words to Total Tokens. Higher = richer vocabulary. Lower = repetitive text.")
+        col_s4.metric("Avg Word Len", f"{text_stats['Avg Word Length']}", help="Average number of characters per word.")
 
 else: 
     st.info("upload files to start.")
