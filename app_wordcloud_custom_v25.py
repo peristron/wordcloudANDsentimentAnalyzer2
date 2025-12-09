@@ -1,4 +1,4 @@
-#  optimizing for public deployment + large files + graph analysis + the 'ai', including pptx AND url/scrape support
+#  optimizing for public deployment + large files + graph analysis + the 'ai' - NEW, pptx AND url / scrape support, and manual text pasting
 #
 import io
 import re
@@ -169,7 +169,7 @@ def make_unique_header(raw_names: List[Optional[str]]) -> List[str]:
 
 # --- NEW: Web Scraping Helper
 class VirtualFile:
-    """Helper to make a URL string look like a file upload for the existing logic"""
+    """Helper to make a URL string or pasted text look like a file upload for the existing logic"""
     def __init__(self, name: str, text_content: str):
         self.name = name
         self._bytes = text_content.encode('utf-8')
@@ -637,9 +637,12 @@ with st.sidebar:
 
     st.divider()
     
-    # --- NEW: URL Input ---
+    # --- NEW: URL & Manual Input ---
     st.markdown("### 🌐 Web & Files")
-    url_input = st.text_area("enter urls (1 per line - publicly accessible addresses only)", height=100, help="The app will scrape the visible text from these pages.")
+    url_input = st.text_area("enter urls (one per line)", height=100, help="The app will scrape the visible text from these pages.")
+    
+    # --- NEW: Manual Paste ---
+    manual_input = st.text_area("paste text manually", height=150, help="Copy text from private sites (SharePoint, Teams, Emails) and paste here. It will be treated as a text file.")
     
     st.info("Performance Tip: Streaming allows files up to ~1GB (but no need to push it)")
     uploaded_files = st.file_uploader(
@@ -704,7 +707,7 @@ with st.sidebar:
 # --------------------------
 combined_counts, combined_bigrams, file_results = Counter(), Counter(), []
 
-# --- NEW: Process URLs into Virtual Files ---
+# --- NEW: Process URLs and Manual Text into Virtual Files ---
 all_inputs = list(uploaded_files) if uploaded_files else []
 
 if url_input:
@@ -721,8 +724,12 @@ if url_input:
                     all_inputs.append(VirtualFile(safe_name, scraped_text))
             status.update(label="Scraping Complete", state="complete", expanded=False)
 
+if manual_input:
+    # Treat manual input as a single text file
+    all_inputs.append(VirtualFile("manual_pasted_text.txt", manual_input))
+
 if all_inputs:
-    st.subheader("📄 Per-File / URL Processing")
+    st.subheader("📄 Per-File / URL / Text Processing")
     overall_bar, overall_status = st.progress(0), st.empty()
     use_combined_option = "use combined font"
     total_files = len(all_inputs)
@@ -748,7 +755,7 @@ if all_inputs:
             if is_vtt: st.info("VTT transcript detected.")
             elif is_pdf: st.info("PDF document detected. Processing page by page.")
             elif is_pptx: st.info("PowerPoint presentation detected. Extracting text from slides.")
-            elif is_txt: st.info("Plain Text (or URL content) detected.")
+            elif is_txt: st.info("Plain Text (or URL/Manual content) detected.")
             
             elif is_csv:
                 try: inferred_cols = detect_csv_num_cols(file_bytes, encoding_choice, delimiter=",")
