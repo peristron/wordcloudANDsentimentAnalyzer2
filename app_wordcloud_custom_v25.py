@@ -642,7 +642,7 @@ with st.sidebar:
     url_input = st.text_area("enter urls (one per line)", height=100, help="The app will scrape the visible text from these pages.")
     
     # --- NEW: Manual Paste ---
-    manual_input = st.text_area("paste text manually", height=150, help="Copy text from private sites (SharePoint, Teams, Emails) and paste here. It will be treated as a text file.")
+    manual_input = st.text_area("paste text manually", height=150, help="Keeping OPSEC in mind, you can copy text from non-public sites and paste here; text will be treated as a text file")
     
     st.info("Performance Tip: Streaming allows files up to ~1GB (but no need to push it)")
     uploaded_files = st.file_uploader(
